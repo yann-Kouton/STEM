@@ -370,7 +370,6 @@ function LoginPage() {
             )}
           </div>
         </div>
-        <p className="text-center text-xs mt-4 opacity-50 font-mono" style={{ color: C.ink }}>Appuyez sur ⌘K une fois connecté pour la palette de commandes</p>
       </motion.div>
     </div>
   );

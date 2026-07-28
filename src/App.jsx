@@ -690,38 +690,208 @@ function DashboardPage() {
 /* ============================================================
    PAGE : Gestion des Patients — version avec formulaire PDF + assurance + métier + appels/SMS
    ============================================================ */
-function TimelineDrawer({ patient, onClose, dark }) {
+
+// NOUVEAU COMPOSANT : affiche toutes les informations du patient (remplace TimelineDrawer)
+function PatientDetailDrawer({ patient, onClose, dark }) {
   const historique = [...(patient.historique || [])].sort((a, b) => toDate(b.date) - toDate(a.date));
+
   return (
-    <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'tween', duration: 0.25 }}
-      className="fixed right-0 top-0 h-screen w-full max-w-md z-50 shadow-2xl overflow-y-auto scrollbar-thin"
+    <motion.div
+      initial={{ x: '100%' }}
+      animate={{ x: 0 }}
+      exit={{ x: '100%' }}
+      transition={{ type: 'tween', duration: 0.25 }}
+      className="fixed right-0 top-0 h-screen w-full max-w-2xl z-50 shadow-2xl overflow-y-auto scrollbar-thin"
       style={{ background: dark ? C.cardDark : C.card }}
     >
-      <div className="p-5 border-b flex items-center justify-between sticky top-0" style={{ background: dark ? C.cardDark : C.card, borderColor: dark ? '#ffffff14' : '#00000010' }}>
+      {/* En-tête */}
+      <div
+        className="p-5 border-b sticky top-0 z-10 flex items-center justify-between"
+        style={{ background: dark ? C.cardDark : C.card, borderColor: dark ? '#ffffff14' : '#00000010' }}
+      >
         <div>
-          <p className={`font-display text-lg ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.prenom} {patient.nom}</p>
-          <p className={`text-xs font-mono ${dark ? 'text-white/40' : 'text-gray-400'}`}>{historique.length} consultation(s)</p>
+          <p className={`font-display text-xl ${dark ? 'text-white' : 'text-gray-800'}`}>
+            {patient.prenom} {patient.nom}
+          </p>
+          {patient.contact1 && (
+            <p className={`text-sm flex items-center gap-1 mt-0.5 ${dark ? 'text-white/60' : 'text-gray-600'}`}>
+              <PhoneIcon className="h-4 w-4" /> {patient.contact1}
+            </p>
+          )}
         </div>
         <button onClick={onClose} className={dark ? 'text-white/50 hover:text-white' : 'text-gray-400 hover:text-gray-700'}>
           <XMarkIcon className="h-6 w-6" />
         </button>
       </div>
-      <div className="p-5">
-        {historique.length === 0 ? (
-          <p className={`text-sm text-center py-10 ${dark ? 'text-white/40' : 'text-gray-400'}`}>Aucune visite enregistrée pour le moment</p>
-        ) : (
-          <div className="relative pl-6 space-y-6">
-            <div className="absolute left-[7px] top-1 bottom-1 w-px" style={{ background: dark ? '#ffffff20' : '#00000015' }} />
-            {historique.map((v, i) => (
-              <div key={i} className="relative">
-                <div className="absolute -left-6 top-1 h-3.5 w-3.5 rounded-full border-2" style={{ borderColor: C.teal, background: dark ? C.cardDark : C.card }} />
-                <p className={`text-xs font-mono ${dark ? 'text-white/40' : 'text-gray-400'}`}>{formatDate(v.date)}</p>
-                <p className={`text-sm font-medium mt-0.5 ${dark ? 'text-white' : 'text-gray-800'}`}>{v.objet || 'Consultation'}</p>
-                {v.notes && <p className={`text-sm mt-1 ${dark ? 'text-white/60' : 'text-gray-500'}`}>{v.notes}</p>}
-              </div>
-            ))}
+
+      <div className="p-6 space-y-6">
+        {/* Section I : Administratif */}
+        <div>
+          <h4 className={`text-sm font-semibold uppercase tracking-wider ${dark ? 'text-white/40' : 'text-gray-500'} border-b pb-1`}>
+            I. Données administratives
+          </h4>
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-2 mt-3 text-sm">
+            <div>
+              <dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Genre</dt>
+              <dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.genre || '—'}</dd>
+            </div>
+            <div>
+              <dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Date de naissance</dt>
+              <dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>
+                {patient.dateNaissance ? formatDate(patient.dateNaissance) : '—'}
+              </dd>
+            </div>
+            <div className="col-span-2">
+              <dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Adresse</dt>
+              <dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.adresse || '—'}</dd>
+            </div>
+            <div>
+              <dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Assurance</dt>
+              <dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.assurance || '—'}</dd>
+            </div>
+            <div>
+              <dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Contact 2</dt>
+              <dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.contact2 || '—'}</dd>
+            </div>
+          </dl>
+        </div>
+
+        {/* Section II : Médical */}
+        <div>
+          <h4 className={`text-sm font-semibold uppercase tracking-wider ${dark ? 'text-white/40' : 'text-gray-500'} border-b pb-1`}>
+            II. Données médicales
+          </h4>
+          <dl className="grid grid-cols-1 gap-y-2 mt-3 text-sm">
+            <div>
+              <dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Allergie médicamenteuse</dt>
+              <dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>
+                {patient.allergieMedicamenteuse === 'OUI' ? (
+                  <span className="text-red-600">OUI — {patient.allergiePrecision || 'non précisé'}</span>
+                ) : (
+                  'NON'
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Antécédent maladie</dt>
+              <dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>
+                {patient.antecedentMaladie === 'OUI' ? (
+                  <span className="text-amber-600">OUI — {patient.antecedentPrecision || 'non précisé'}</span>
+                ) : (
+                  'NON'
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Pathologie chronique</dt>
+              <dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.pathologieChronique || '—'}</dd>
+            </div>
+            <div>
+              <dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Traitement chronique</dt>
+              <dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>
+                {patient.traitementChronique && patient.traitementChronique.length > 0 ? (
+                  <ul className="list-disc list-inside space-y-0.5">
+                    {patient.traitementChronique.map((med, idx) => (
+                      <li key={idx}>{med}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  '—'
+                )}
+              </dd>
+            </div>
+          </dl>
+        </div>
+
+        {/* Section III : Mode de vie */}
+        <div>
+          <h4 className={`text-sm font-semibold uppercase tracking-wider ${dark ? 'text-white/40' : 'text-gray-500'} border-b pb-1`}>
+            III. Mode de vie
+          </h4>
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-2 mt-3 text-sm">
+            <div>
+              <dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Tabagisme</dt>
+              <dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.tabagisme || 'NON'}</dd>
+            </div>
+            <div>
+              <dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Alcool</dt>
+              <dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.alcool || 'NON'}</dd>
+            </div>
+            <div>
+              <dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Café</dt>
+              <dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.cafe || 'NON'}</dd>
+            </div>
+            <div>
+              <dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Régime particulier</dt>
+              <dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>
+                {patient.regimeParticulier === 'OUI' ? patient.regimePrecision || 'OUI' : 'NON'}
+              </dd>
+            </div>
+            <div>
+              <dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Activité physique</dt>
+              <dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>
+                {patient.activitePhysique === 'OUI' ? patient.activitePrecision || 'OUI' : 'NON'}
+              </dd>
+            </div>
+            <div>
+              <dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Métier</dt>
+              <dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.metier || '—'}</dd>
+            </div>
+            <div className="col-span-2">
+              <dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Remarques</dt>
+              <dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.notes || '—'}</dd>
+            </div>
+          </dl>
+        </div>
+
+        {/* Prochain renouvellement et ordonnance */}
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <dt className={`text-sm ${dark ? 'text-white/40' : 'text-gray-500'}`}>Prochain renouvellement</dt>
+            <dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>
+              {patient.dateRenouvellement ? formatDate(patient.dateRenouvellement) : '—'}
+            </dd>
           </div>
-        )}
+          <div>
+            <dt className={`text-sm ${dark ? 'text-white/40' : 'text-gray-500'}`}>Ordonnance</dt>
+            <dd>
+              {patient.ordonnanceUrl ? (
+                <a
+                  href={patient.ordonnanceUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-teal-600 hover:underline flex items-center gap-1"
+                >
+                  <PhotoIcon className="h-4 w-4" /> Voir l'image
+                </a>
+              ) : (
+                <span className={`${dark ? 'text-white/40' : 'text-gray-400'}`}>Aucune</span>
+              )}
+            </dd>
+          </div>
+        </div>
+
+        {/* Historique des consultations */}
+        <div>
+          <h4 className={`text-sm font-semibold uppercase tracking-wider ${dark ? 'text-white/40' : 'text-gray-500'} border-b pb-1`}>
+            Historique des consultations ({historique.length})
+          </h4>
+          {historique.length === 0 ? (
+            <p className={`text-sm mt-3 ${dark ? 'text-white/40' : 'text-gray-400'}`}>Aucune consultation enregistrée.</p>
+          ) : (
+            <div className="relative pl-6 mt-3 space-y-4">
+              <div className="absolute left-[7px] top-1 bottom-1 w-px" style={{ background: dark ? '#ffffff20' : '#00000015' }} />
+              {historique.map((v, i) => (
+                <div key={i} className="relative">
+                  <div className="absolute -left-6 top-1 h-3.5 w-3.5 rounded-full border-2" style={{ borderColor: C.teal, background: dark ? C.cardDark : C.card }} />
+                  <p className={`text-xs font-mono ${dark ? 'text-white/40' : 'text-gray-400'}`}>{formatDate(v.date)}</p>
+                  <p className={`text-sm font-medium mt-0.5 ${dark ? 'text-white' : 'text-gray-800'}`}>{v.objet || 'Consultation'}</p>
+                  {v.notes && <p className={`text-sm mt-1 ${dark ? 'text-white/60' : 'text-gray-500'}`}>{v.notes}</p>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </motion.div>
   );
@@ -772,7 +942,7 @@ function PatientsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPatient, setEditingPatient] = useState(null);
   const [visitPatient, setVisitPatient] = useState(null);
-  const [timelinePatient, setTimelinePatient] = useState(null);
+  const [detailPatient, setDetailPatient] = useState(null); // remplace timelinePatient
   const [formData, setFormData] = useState({
     // Administratif
     nom: '',
@@ -996,7 +1166,7 @@ function PatientsPage() {
     }
   };
 
-  // Nouveaux gestionnaires d'appel et SMS
+  // Gestionnaires d'appel et SMS
   const handleCall = (telephone) => {
     if (!telephone) return;
     window.location.href = `tel:${telephone}`;
@@ -1058,7 +1228,7 @@ function PatientsPage() {
             return (
               <div key={patient.id} className="p-4 rounded-xl transition-shadow hover:shadow-md" style={{ background: dark ? C.cardDark : C.card, border: `1px solid ${renouvUrgent ? C.amber + '55' : (dark ? '#ffffff14' : '#00000010')}` }}>
                 <div className="flex items-start justify-between">
-                  <button onClick={() => setTimelinePatient(patient)} className="flex-1 text-left">
+                  <button onClick={() => setDetailPatient(patient)} className="flex-1 text-left">
                     <h3 className={`font-semibold ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.prenom} {patient.nom}</h3>
                     {contact && (
                       <span className="text-sm text-green-600 flex items-center gap-1 mt-1">
@@ -1075,7 +1245,7 @@ function PatientsPage() {
                       <p className="text-xs text-gray-600 mt-1">Métier : {patient.metier}</p>
                     )}
                     <p className={`text-xs mt-1 flex items-center gap-1 ${dark ? 'text-white/40' : 'text-gray-400'}`}>
-                      <ClockIcon className="h-3.5 w-3.5" /> {(patient.historique || []).length} consultation(s) — voir l'historique
+                      <ClockIcon className="h-3.5 w-3.5" /> {(patient.historique || []).length} consultation(s) — voir détail
                     </p>
                   </button>
                   <div className="flex gap-1 flex-shrink-0">
@@ -1124,9 +1294,17 @@ function PatientsPage() {
       )}
 
       <AnimatePresence>
-        {timelinePatient && <TimelineDrawer patient={patients.find(p => p.id === timelinePatient.id) || timelinePatient} onClose={() => setTimelinePatient(null)} dark={dark} />}
+        {detailPatient && (
+          <PatientDetailDrawer
+            patient={patients.find(p => p.id === detailPatient.id) || detailPatient}
+            onClose={() => setDetailPatient(null)}
+            dark={dark}
+          />
+        )}
       </AnimatePresence>
-      {timelinePatient && <div className="fixed inset-0 bg-black/30 z-40" onClick={() => setTimelinePatient(null)} />}
+      {detailPatient && (
+        <div className="fixed inset-0 bg-black/30 z-40" onClick={() => setDetailPatient(null)} />
+      )}
 
       {visitPatient && <VisitModal patient={visitPatient} onClose={() => setVisitPatient(null)} onSave={saveVisit} />}
 

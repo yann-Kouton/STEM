@@ -522,7 +522,7 @@ function Sidebar() {
           <ArrowLeftOnRectangleIcon className="h-5 w-5 mr-3" />
           Déconnexion
         </button>
-        <p className="text-[10px] text-white/30 text-center mt-3 font-mono">v2.0 • PHCIE Sainte Marie Majeure</p>
+        <p className="text-[10px] text-white/30 text-center mt-3 font-mono">v1.0 • PHCIE Sainte Marie Majeure</p>
       </div>
     </div>
   );

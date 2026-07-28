@@ -12,9 +12,9 @@ import {
   UserPlusIcon, MagnifyingGlassIcon, PencilSquareIcon, TrashIcon, UserCircleIcon,
   PhoneIcon, HomeIcon, UsersIcon, ChatBubbleLeftRightIcon, ChartBarIcon, PhotoIcon,
   ClipboardDocumentListIcon, MoonIcon, SunIcon, CommandLineIcon, BellAlertIcon,
-  ArchiveBoxIcon, ClockIcon, ChevronRightIcon, PlusIcon, BeakerIcon, ScaleIcon,
+  ClockIcon, ChevronRightIcon, BeakerIcon, ScaleIcon,
   ShieldExclamationIcon, CheckCircleIcon, InformationCircleIcon, ExclamationTriangleIcon,
-  CalendarDaysIcon, Bars3Icon, SparklesIcon, ArrowPathIcon, TagIcon
+  CalendarDaysIcon, Bars3Icon, SparklesIcon, ArrowPathIcon
 } from '@heroicons/react/24/outline';
 import { sendPasswordResetEmail, sendEmailVerification } from 'firebase/auth';
 import { auth, db, storage } from './firebase/config';
@@ -390,7 +390,6 @@ function CommandPalette() {
     { label: 'Patients', icon: UsersIcon, run: () => navigate('/patients') },
     { label: 'Ajouter un patient', icon: UserPlusIcon, run: () => navigate('/patients?action=add') },
     { label: 'Rechercher un patient', icon: MagnifyingGlassIcon, run: () => navigate('/patients?focus=search') },
-    { label: 'Stock & péremptions', icon: ArchiveBoxIcon, run: () => navigate('/stock') },
     { label: 'Assistant IA (interactions, posologie)', icon: ChatBubbleLeftRightIcon, run: () => navigate('/assistant') },
     { label: 'Statistiques', icon: ChartBarIcon, run: () => navigate('/stats') },
     { label: 'Basculer le mode sombre', icon: MoonIcon, run: () => toggleDark() },
@@ -473,7 +472,6 @@ function Sidebar() {
   const navItems = [
     { path: '/dashboard', label: 'Tableau de bord', icon: HomeIcon },
     { path: '/patients', label: 'Patients', icon: UsersIcon },
-    { path: '/stock', label: 'Stock & péremptions', icon: ArchiveBoxIcon },
     { path: '/assistant', label: 'Assistant IA', icon: ChatBubbleLeftRightIcon },
     { path: '/stats', label: 'Statistiques', icon: ChartBarIcon },
   ];
@@ -528,7 +526,7 @@ function Sidebar() {
 }
 
 /* ============================================================
-   PAGE : Tableau de bord
+   PAGE : Tableau de bord (sans inventaire)
    ============================================================ */
 function StatCard({ title, value, icon: Icon, tone, dark, sub }) {
   return (
@@ -554,7 +552,6 @@ function DashboardPage() {
   const navigate = useNavigate();
   const isEmailVerified = user?.emailVerified;
   const [patients, setPatients] = useState([]);
-  const [inventaire, setInventaire] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -564,9 +561,7 @@ function DashboardPage() {
       setPatients(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
       setLoading(false);
     }, () => setLoading(false));
-    const qI = query(collection(db, 'inventaire'), where('pharmacienId', '==', user.uid));
-    const unsubI = onSnapshot(qI, (snap) => setInventaire(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
-    return () => { unsubP(); unsubI(); };
+    return () => { unsubP(); };
   }, [user]);
 
   const stats = useMemo(() => {
@@ -579,13 +574,8 @@ function DashboardPage() {
       const d = daysUntil(p.dateRenouvellement);
       return d !== null && d <= 7;
     });
-    const stockAlertes = inventaire.filter((i) => (i.quantite ?? 0) <= (i.seuilAlerte ?? 0));
-    const peremptionsProches = inventaire.filter((i) => {
-      const d = daysUntil(i.datePeremption);
-      return d !== null && d <= 30;
-    });
-    return { totalPatients, totalConsultations, consultationsJour, renouvellements, stockAlertes, peremptionsProches, allVisites };
-  }, [patients, inventaire]);
+    return { totalPatients, totalConsultations, consultationsJour, renouvellements, allVisites };
+  }, [patients]);
 
   const trendData = useMemo(() => {
     const days = Array.from({ length: 7 }).map((_, i) => {
@@ -628,11 +618,10 @@ function DashboardPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
         <StatCard title="Patients actifs" value={stats.totalPatients} icon={UsersIcon} tone={C.teal} dark={dark} />
         <StatCard title="Consultations totales" value={stats.totalConsultations} icon={ClipboardDocumentListIcon} tone={C.tealLight} dark={dark} />
         <StatCard title="Aujourd'hui" value={stats.consultationsJour} icon={CalendarDaysIcon} tone={C.sage} dark={dark} />
-        <StatCard title="Alertes actives" value={stats.renouvellements.length + stats.stockAlertes.length + stats.peremptionsProches.length} icon={BellAlertIcon} tone={C.clay} dark={dark} sub="Renouvellements + stock" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-6">
@@ -672,7 +661,7 @@ function DashboardPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+      <div className="mt-4">
         <div className="p-5 rounded-2xl" style={{ background: dark ? C.cardDark : C.card, border: `1px solid ${dark ? '#ffffff14' : '#00000010'}` }}>
           <p className={`text-sm font-medium mb-3 flex items-center gap-2 ${dark ? 'text-white' : 'text-gray-700'}`}>
             <CalendarDaysIcon className="h-4 w-4" style={{ color: C.amber }} /> Renouvellements à prévoir
@@ -693,31 +682,13 @@ function DashboardPage() {
             </div>
           )}
         </div>
-
-        <div className="p-5 rounded-2xl" style={{ background: dark ? C.cardDark : C.card, border: `1px solid ${dark ? '#ffffff14' : '#00000010'}` }}>
-          <p className={`text-sm font-medium mb-3 flex items-center gap-2 ${dark ? 'text-white' : 'text-gray-700'}`}>
-            <ArchiveBoxIcon className="h-4 w-4" style={{ color: C.clay }} /> Stock à surveiller
-          </p>
-          {stats.stockAlertes.length === 0 && stats.peremptionsProches.length === 0 ? (
-            <p className={`text-sm ${dark ? 'text-white/40' : 'text-gray-400'}`}>Aucune alerte de stock</p>
-          ) : (
-            <div className="space-y-2">
-              {[...stats.stockAlertes, ...stats.peremptionsProches].filter((v, i, arr) => arr.findIndex(x => x.id === v.id) === i).slice(0, 5).map((item) => (
-                <button key={item.id} onClick={() => navigate('/stock')} className="w-full flex items-center justify-between text-sm px-3 py-2 rounded-lg hover:bg-black/5 transition-colors text-left">
-                  <span className={dark ? 'text-white/80' : 'text-gray-700'}>{item.nom}</span>
-                  <span className="text-xs font-mono text-red-500">{(item.quantite ?? 0) <= (item.seuilAlerte ?? 0) ? `stock: ${item.quantite}` : `péremption ${formatDate(item.datePeremption)}`}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
       </div>
     </div>
   );
 }
 
 /* ============================================================
-   PAGE : Gestion des Patients
+   PAGE : Gestion des Patients — version avec formulaire PDF + assurance + métier + appels/SMS
    ============================================================ */
 function TimelineDrawer({ patient, onClose, dark }) {
   const historique = [...(patient.historique || [])].sort((a, b) => toDate(b.date) - toDate(a.date));
@@ -803,7 +774,36 @@ function PatientsPage() {
   const [visitPatient, setVisitPatient] = useState(null);
   const [timelinePatient, setTimelinePatient] = useState(null);
   const [formData, setFormData] = useState({
-    nom: '', prenom: '', telephone: '', dateRenouvellement: '', ordonnanceUrl: '', ordonnanceFile: null, notes: ''
+    // Administratif
+    nom: '',
+    prenom: '',
+    genre: 'Homme',
+    dateNaissance: '',
+    adresse: '',
+    assurance: '',
+    contact1: '',
+    contact2: '',
+    // Médical
+    allergieMedicamenteuse: 'NON',
+    allergiePrecision: '',
+    antecedentMaladie: 'NON',
+    antecedentPrecision: '',
+    pathologieChronique: '',
+    traitementChronique: [''],
+    // Mode de vie
+    tabagisme: 'NON',
+    alcool: 'NON',
+    cafe: 'NON',
+    regimeParticulier: 'NON',
+    regimePrecision: '',
+    activitePhysique: 'NON',
+    activitePrecision: '',
+    metier: '',
+    // Anciens champs (conservés)
+    dateRenouvellement: '',
+    ordonnanceUrl: '',
+    ordonnanceFile: null,
+    notes: ''
   });
   const [isUploading, setIsUploading] = useState(false);
   const searchInputRef = useRef(null);
@@ -827,14 +827,44 @@ function PatientsPage() {
   const filteredPatients = patients.filter((p) =>
     (p.nom?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
     (p.prenom?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
-    (p.telephone || '').includes(searchTerm)
+    (p.contact1 || p.telephone || '').includes(searchTerm)
   );
 
   const handleInputChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
+  const handleRadioChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
   const handleFileChange = (e) => { const file = e.target.files[0]; if (file) setFormData({ ...formData, ordonnanceFile: file }); };
 
   const resetForm = () => {
-    setFormData({ nom: '', prenom: '', telephone: '', dateRenouvellement: '', ordonnanceUrl: '', ordonnanceFile: null, notes: '' });
+    setFormData({
+      nom: '',
+      prenom: '',
+      genre: 'Homme',
+      dateNaissance: '',
+      adresse: '',
+      assurance: '',
+      contact1: '',
+      contact2: '',
+      allergieMedicamenteuse: 'NON',
+      allergiePrecision: '',
+      antecedentMaladie: 'NON',
+      antecedentPrecision: '',
+      pathologieChronique: '',
+      traitementChronique: [''],
+      tabagisme: 'NON',
+      alcool: 'NON',
+      cafe: 'NON',
+      regimeParticulier: 'NON',
+      regimePrecision: '',
+      activitePhysique: 'NON',
+      activitePrecision: '',
+      metier: '',
+      dateRenouvellement: '',
+      ordonnanceUrl: '',
+      ordonnanceFile: null,
+      notes: ''
+    });
     setEditingPatient(null);
     setIsModalOpen(false);
     setIsUploading(false);
@@ -844,9 +874,32 @@ function PatientsPage() {
   const openEditModal = (patient) => {
     setEditingPatient(patient);
     setFormData({
-      nom: patient.nom || '', prenom: patient.prenom || '', telephone: patient.telephone || '',
+      nom: patient.nom || '',
+      prenom: patient.prenom || '',
+      genre: patient.genre || 'Homme',
+      dateNaissance: patient.dateNaissance ? toDate(patient.dateNaissance).toISOString().slice(0, 10) : '',
+      adresse: patient.adresse || '',
+      assurance: patient.assurance || '',
+      contact1: patient.contact1 || patient.telephone || '',
+      contact2: patient.contact2 || '',
+      allergieMedicamenteuse: patient.allergieMedicamenteuse || 'NON',
+      allergiePrecision: patient.allergiePrecision || '',
+      antecedentMaladie: patient.antecedentMaladie || 'NON',
+      antecedentPrecision: patient.antecedentPrecision || '',
+      pathologieChronique: patient.pathologieChronique || '',
+      traitementChronique: patient.traitementChronique && patient.traitementChronique.length > 0 ? patient.traitementChronique : [''],
+      tabagisme: patient.tabagisme || 'NON',
+      alcool: patient.alcool || 'NON',
+      cafe: patient.cafe || 'NON',
+      regimeParticulier: patient.regimeParticulier || 'NON',
+      regimePrecision: patient.regimePrecision || '',
+      activitePhysique: patient.activitePhysique || 'NON',
+      activitePrecision: patient.activitePrecision || '',
+      metier: patient.metier || '',
       dateRenouvellement: patient.dateRenouvellement ? toDate(patient.dateRenouvellement).toISOString().slice(0, 10) : '',
-      ordonnanceUrl: patient.ordonnanceUrl || '', ordonnanceFile: null, notes: patient.notes || ''
+      ordonnanceUrl: patient.ordonnanceUrl || '',
+      ordonnanceFile: null,
+      notes: patient.notes || ''
     });
     setIsModalOpen(true);
   };
@@ -870,10 +923,37 @@ function PatientsPage() {
         ordonnanceUrl = await uploadOrdonnance(formData.ordonnanceFile, editingPatient ? editingPatient.id : 'temp');
       }
       const patientData = {
-        nom: formData.nom, prenom: formData.prenom, telephone: formData.telephone,
+        // Administratif
+        nom: formData.nom,
+        prenom: formData.prenom,
+        genre: formData.genre,
+        dateNaissance: formData.dateNaissance ? new Date(formData.dateNaissance).toISOString() : null,
+        adresse: formData.adresse,
+        assurance: formData.assurance,
+        contact1: formData.contact1,
+        contact2: formData.contact2,
+        // Médical
+        allergieMedicamenteuse: formData.allergieMedicamenteuse,
+        allergiePrecision: formData.allergiePrecision,
+        antecedentMaladie: formData.antecedentMaladie,
+        antecedentPrecision: formData.antecedentPrecision,
+        pathologieChronique: formData.pathologieChronique,
+        traitementChronique: formData.traitementChronique.filter(m => m.trim() !== ''),
+        // Mode de vie
+        tabagisme: formData.tabagisme,
+        alcool: formData.alcool,
+        cafe: formData.cafe,
+        regimeParticulier: formData.regimeParticulier,
+        regimePrecision: formData.regimePrecision,
+        activitePhysique: formData.activitePhysique,
+        activitePrecision: formData.activitePrecision,
+        metier: formData.metier,
+        // Anciens champs
         dateRenouvellement: formData.dateRenouvellement ? new Date(formData.dateRenouvellement).toISOString() : null,
-        ordonnanceUrl: ordonnanceUrl || '', notes: formData.notes,
-        pharmacienId: user.uid, updatedAt: serverTimestamp()
+        ordonnanceUrl: ordonnanceUrl || '',
+        notes: formData.notes,
+        pharmacienId: user.uid,
+        updatedAt: serverTimestamp()
       };
       if (editingPatient) {
         await updateDoc(doc(db, 'patients', editingPatient.id), patientData);
@@ -916,8 +996,21 @@ function PatientsPage() {
     }
   };
 
+  // Nouveaux gestionnaires d'appel et SMS
+  const handleCall = (telephone) => {
+    if (!telephone) return;
+    window.location.href = `tel:${telephone}`;
+  };
+
+  const handleSms = (telephone, prenom) => {
+    if (!telephone) return;
+    const msg = encodeURIComponent(`Bonjour ${prenom}, la Pharmacie Sainte Marie Majeure vous contacte.`);
+    window.location.href = `sms:${telephone}?body=${msg}`;
+  };
+
   const sendReminder = (patient) => {
-    const num = normalizePhoneForWhatsApp(patient.telephone);
+    const num = normalizePhoneForWhatsApp(patient.contact1 || patient.telephone || '');
+    if (!num) return;
     const msg = encodeURIComponent(`Bonjour ${patient.prenom}, la Pharmacie Sainte Marie Majeure vous rappelle que le renouvellement de votre traitement est prévu prochainement. N'hésitez pas à passer nous voir. Bonne journée !`);
     window.open(`https://wa.me/${num}?text=${msg}`, '_blank');
   };
@@ -961,15 +1054,25 @@ function PatientsPage() {
           {filteredPatients.map((patient) => {
             const renouvJours = daysUntil(patient.dateRenouvellement);
             const renouvUrgent = renouvJours !== null && renouvJours <= 7;
+            const contact = patient.contact1 || patient.telephone;
             return (
               <div key={patient.id} className="p-4 rounded-xl transition-shadow hover:shadow-md" style={{ background: dark ? C.cardDark : C.card, border: `1px solid ${renouvUrgent ? C.amber + '55' : (dark ? '#ffffff14' : '#00000010')}` }}>
                 <div className="flex items-start justify-between">
                   <button onClick={() => setTimelinePatient(patient)} className="flex-1 text-left">
                     <h3 className={`font-semibold ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.prenom} {patient.nom}</h3>
-                    {patient.telephone && (
+                    {contact && (
                       <span className="text-sm text-green-600 flex items-center gap-1 mt-1">
-                        <PhoneIcon className="h-4 w-4" /> {patient.telephone}
+                        <PhoneIcon className="h-4 w-4" /> {contact}
                       </span>
+                    )}
+                    {patient.allergieMedicamenteuse === 'OUI' && patient.allergiePrecision && (
+                      <p className="text-xs text-red-600 mt-1">Allergie : {patient.allergiePrecision}</p>
+                    )}
+                    {patient.pathologieChronique && (
+                      <p className="text-xs text-amber-600 mt-1">Pathologie : {patient.pathologieChronique}</p>
+                    )}
+                    {patient.metier && (
+                      <p className="text-xs text-gray-600 mt-1">Métier : {patient.metier}</p>
                     )}
                     <p className={`text-xs mt-1 flex items-center gap-1 ${dark ? 'text-white/40' : 'text-gray-400'}`}>
                       <ClockIcon className="h-3.5 w-3.5" /> {(patient.historique || []).length} consultation(s) — voir l'historique
@@ -994,14 +1097,24 @@ function PatientsPage() {
                   </div>
                 )}
 
-                <div className="flex gap-2 mt-3">
+                <div className="flex flex-wrap gap-1 mt-3">
                   <button onClick={() => setVisitPatient(patient)} className="flex-1 text-xs font-medium py-1.5 rounded-lg border transition-colors" style={{ borderColor: C.teal + '55', color: C.teal }}>
                     + Consultation
                   </button>
-                  {patient.telephone && renouvUrgent && (
-                    <button onClick={() => sendReminder(patient)} className="flex-1 text-xs font-medium py-1.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors">
-                      Rappel WhatsApp
-                    </button>
+                  {contact && (
+                    <>
+                      <button onClick={() => handleCall(contact)} className="flex-1 text-xs font-medium py-1.5 rounded-lg bg-green-50 text-green-700 hover:bg-green-100 transition-colors flex items-center justify-center gap-1">
+                        <PhoneIcon className="h-3 w-3" /> Appeler
+                      </button>
+                      <button onClick={() => handleSms(contact, patient.prenom)} className="flex-1 text-xs font-medium py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors flex items-center justify-center gap-1">
+                        <ChatBubbleLeftRightIcon className="h-3 w-3" /> SMS
+                      </button>
+                      {renouvUrgent && (
+                        <button onClick={() => sendReminder(patient)} className="flex-1 text-xs font-medium py-1.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors flex items-center justify-center gap-1">
+                          <ChatBubbleLeftRightIcon className="h-3 w-3" /> WhatsApp
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
               </div>
@@ -1017,245 +1130,400 @@ function PatientsPage() {
 
       {visitPatient && <VisitModal patient={visitPatient} onClose={() => setVisitPatient(null)} onSave={saveVisit} />}
 
+      {/* Modal formulaire complet */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto p-6">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="font-display text-xl text-gray-800">{editingPatient ? 'Modifier le patient' : 'Ajouter un patient'}</h2>
-              <button onClick={resetForm} className="text-gray-400 hover:text-gray-600"><XMarkIcon className="h-6 w-6" /></button>
+              <h2 className="font-display text-xl text-gray-800">
+                {editingPatient ? 'Modifier le patient' : 'Ajouter un patient'}
+              </h2>
+              <button onClick={resetForm} className="text-gray-400 hover:text-gray-600">
+                <XMarkIcon className="h-6 w-6" />
+              </button>
             </div>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Nom *</label>
-                  <input type="text" name="nom" value={formData.nom} onChange={handleInputChange} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" required />
+
+            <form onSubmit={handleSubmit} className="space-y-6">
+              {/* I. Données administratives */}
+              <div className="border-b border-gray-200 pb-4">
+                <h3 className="font-display text-lg text-gray-800 mb-3">I. Données administratives</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Nom *</label>
+                    <input
+                      type="text"
+                      name="nom"
+                      value={formData.nom}
+                      onChange={handleInputChange}
+                      className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Prénom(s) *</label>
+                    <input
+                      type="text"
+                      name="prenom"
+                      value={formData.prenom}
+                      onChange={handleInputChange}
+                      className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
+                      required
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Prénom *</label>
-                  <input type="text" name="prenom" value={formData.prenom} onChange={handleInputChange} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" required />
+                <div className="mt-3">
+                  <label className="block text-sm font-medium text-gray-700">Genre</label>
+                  <div className="flex gap-4 mt-1">
+                    <label className="flex items-center gap-1">
+                      <input
+                        type="radio"
+                        name="genre"
+                        value="Homme"
+                        checked={formData.genre === 'Homme'}
+                        onChange={handleRadioChange}
+                      /> Homme
+                    </label>
+                    <label className="flex items-center gap-1">
+                      <input
+                        type="radio"
+                        name="genre"
+                        value="Femme"
+                        checked={formData.genre === 'Femme'}
+                        onChange={handleRadioChange}
+                      /> Femme
+                    </label>
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <label className="block text-sm font-medium text-gray-700">Date de naissance</label>
+                  <input
+                    type="date"
+                    name="dateNaissance"
+                    value={formData.dateNaissance}
+                    onChange={handleInputChange}
+                    className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
+                  />
+                </div>
+                <div className="mt-3">
+                  <label className="block text-sm font-medium text-gray-700">Adresse</label>
+                  <input
+                    type="text"
+                    name="adresse"
+                    value={formData.adresse}
+                    onChange={handleInputChange}
+                    className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
+                  />
+                </div>
+                <div className="mt-3">
+                  <label className="block text-sm font-medium text-gray-700">Assurance</label>
+                  <input
+                    type="text"
+                    name="assurance"
+                    value={formData.assurance}
+                    onChange={handleInputChange}
+                    className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
+                    placeholder="ex : Mutuelle, CNPS..."
+                  />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Contact 1 *</label>
+                    <input
+                      type="tel"
+                      name="contact1"
+                      value={formData.contact1}
+                      onChange={handleInputChange}
+                      className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Contact 2</label>
+                    <input
+                      type="tel"
+                      name="contact2"
+                      value={formData.contact2}
+                      onChange={handleInputChange}
+                      className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
+                    />
+                  </div>
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Téléphone (WhatsApp) *</label>
-                <input type="tel" name="telephone" value={formData.telephone} onChange={handleInputChange} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" placeholder="05 01 02 03 04" required />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Prochain renouvellement</label>
-                <input type="date" name="dateRenouvellement" value={formData.dateRenouvellement} onChange={handleInputChange} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" />
-                <p className="text-xs text-gray-400 mt-1">Un rappel apparaîtra 7 jours avant cette date</p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Ordonnance (image)</label>
-                <div className="mt-1 flex items-center gap-4 flex-wrap">
-                  <label className="cursor-pointer flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg border border-gray-300 transition-colors">
-                    <PhotoIcon className="h-5 w-5" /> Choisir une image
-                    <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
-                  </label>
-                  {formData.ordonnanceFile && <span className="text-sm text-gray-600">{formData.ordonnanceFile.name}</span>}
-                  {formData.ordonnanceUrl && !formData.ordonnanceFile && (
-                    <a href={formData.ordonnanceUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-indigo-600 hover:underline">Voir l'image actuelle</a>
+
+              {/* II. Données médicales */}
+              <div className="border-b border-gray-200 pb-4">
+                <h3 className="font-display text-lg text-gray-800 mb-3">II. Données médicales</h3>
+                {/* Allergie médicamenteuse */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Allergie médicamenteuse</label>
+                  <div className="flex gap-4 mt-1">
+                    <label className="flex items-center gap-1">
+                      <input
+                        type="radio"
+                        name="allergieMedicamenteuse"
+                        value="OUI"
+                        checked={formData.allergieMedicamenteuse === 'OUI'}
+                        onChange={handleRadioChange}
+                      /> OUI
+                    </label>
+                    <label className="flex items-center gap-1">
+                      <input
+                        type="radio"
+                        name="allergieMedicamenteuse"
+                        value="NON"
+                        checked={formData.allergieMedicamenteuse === 'NON'}
+                        onChange={handleRadioChange}
+                      /> NON
+                    </label>
+                  </div>
+                  {formData.allergieMedicamenteuse === 'OUI' && (
+                    <div className="mt-2">
+                      <label className="block text-sm font-medium text-gray-700">À préciser</label>
+                      <input
+                        type="text"
+                        name="allergiePrecision"
+                        value={formData.allergiePrecision}
+                        onChange={handleInputChange}
+                        className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
+                        placeholder="ex : Pénicilline"
+                      />
+                    </div>
                   )}
                 </div>
+                {/* Antécédent maladie */}
+                <div className="mt-3">
+                  <label className="block text-sm font-medium text-gray-700">Antécédent maladie</label>
+                  <div className="flex gap-4 mt-1">
+                    <label className="flex items-center gap-1">
+                      <input
+                        type="radio"
+                        name="antecedentMaladie"
+                        value="OUI"
+                        checked={formData.antecedentMaladie === 'OUI'}
+                        onChange={handleRadioChange}
+                      /> OUI
+                    </label>
+                    <label className="flex items-center gap-1">
+                      <input
+                        type="radio"
+                        name="antecedentMaladie"
+                        value="NON"
+                        checked={formData.antecedentMaladie === 'NON'}
+                        onChange={handleRadioChange}
+                      /> NON
+                    </label>
+                  </div>
+                  {formData.antecedentMaladie === 'OUI' && (
+                    <div className="mt-2">
+                      <label className="block text-sm font-medium text-gray-700">À préciser</label>
+                      <input
+                        type="text"
+                        name="antecedentPrecision"
+                        value={formData.antecedentPrecision}
+                        onChange={handleInputChange}
+                        className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
+                        placeholder="ex : Diabète, HTA..."
+                      />
+                    </div>
+                  )}
+                </div>
+                {/* Pathologie chronique */}
+                <div className="mt-3">
+                  <label className="block text-sm font-medium text-gray-700">Pathologie chronique</label>
+                  <input
+                    type="text"
+                    name="pathologieChronique"
+                    value={formData.pathologieChronique}
+                    onChange={handleInputChange}
+                    className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
+                    placeholder="ex : Diabète, HTA..."
+                  />
+                </div>
+                {/* Traitement chronique */}
+                <div className="mt-3">
+                  <label className="block text-sm font-medium text-gray-700">Traitement chronique</label>
+                  <div className="space-y-2 mt-1">
+                    {formData.traitementChronique.map((med, index) => (
+                      <div key={index} className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={med}
+                          onChange={(e) => {
+                            const newList = [...formData.traitementChronique];
+                            newList[index] = e.target.value;
+                            setFormData({ ...formData, traitementChronique: newList });
+                          }}
+                          placeholder={`Médicament ${index + 1}`}
+                          className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newList = formData.traitementChronique.filter((_, i) => i !== index);
+                            setFormData({ ...formData, traitementChronique: newList.length ? newList : [''] });
+                          }}
+                          className="text-red-500 hover:text-red-700 p-1"
+                        >
+                          <XMarkIcon className="h-5 w-5" />
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, traitementChronique: [...formData.traitementChronique, ''] })}
+                      className="text-sm text-teal-600 hover:underline"
+                    >
+                      + Ajouter un médicament
+                    </button>
+                  </div>
+                </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Notes générales</label>
-                <textarea name="notes" value={formData.notes} onChange={handleInputChange} rows="3" className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" placeholder="Allergies, antécédents..." />
+
+              {/* III. Mode de vie */}
+              <div className="border-b border-gray-200 pb-4">
+                <h3 className="font-display text-lg text-gray-800 mb-3">III. Mode de vie</h3>
+                {['tabagisme', 'alcool', 'cafe', 'regimeParticulier', 'activitePhysique'].map((field) => {
+                  const label = field === 'regimeParticulier' ? 'Régime particulier' :
+                                field === 'activitePhysique' ? 'Activité physique' :
+                                field.charAt(0).toUpperCase() + field.slice(1);
+                  return (
+                    <div key={field} className="mt-3">
+                      <label className="block text-sm font-medium text-gray-700">{label}</label>
+                      <div className="flex gap-4 mt-1">
+                        <label className="flex items-center gap-1">
+                          <input
+                            type="radio"
+                            name={field}
+                            value="OUI"
+                            checked={formData[field] === 'OUI'}
+                            onChange={handleRadioChange}
+                          /> OUI
+                        </label>
+                        <label className="flex items-center gap-1">
+                          <input
+                            type="radio"
+                            name={field}
+                            value="NON"
+                            checked={formData[field] === 'NON'}
+                            onChange={handleRadioChange}
+                          /> NON
+                        </label>
+                      </div>
+                      {field === 'regimeParticulier' && formData.regimeParticulier === 'OUI' && (
+                        <div className="mt-2">
+                          <label className="block text-sm font-medium text-gray-700">Préciser</label>
+                          <input
+                            type="text"
+                            name="regimePrecision"
+                            value={formData.regimePrecision}
+                            onChange={handleInputChange}
+                            className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
+                            placeholder="ex : Sans sel, végétarien..."
+                          />
+                        </div>
+                      )}
+                      {field === 'activitePhysique' && formData.activitePhysique === 'OUI' && (
+                        <div className="mt-2">
+                          <label className="block text-sm font-medium text-gray-700">Préciser</label>
+                          <input
+                            type="text"
+                            name="activitePrecision"
+                            value={formData.activitePrecision}
+                            onChange={handleInputChange}
+                            className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
+                            placeholder="ex : 3x/semaine, marche..."
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                <div className="mt-3">
+                  <label className="block text-sm font-medium text-gray-700">Métier</label>
+                  <input
+                    type="text"
+                    name="metier"
+                    value={formData.metier}
+                    onChange={handleInputChange}
+                    className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
+                    placeholder="ex : Enseignant, Commerçant..."
+                  />
+                </div>
+                <div className="mt-3">
+                  <label className="block text-sm font-medium text-gray-700">NB (remarques générales)</label>
+                  <textarea
+                    name="notes"
+                    value={formData.notes}
+                    onChange={handleInputChange}
+                    rows="3"
+                    className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
+                    placeholder="Informations complémentaires..."
+                  />
+                </div>
               </div>
+
+              {/* Champs supplémentaires (renouvellement et ordonnance) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Prochain renouvellement</label>
+                  <input
+                    type="date"
+                    name="dateRenouvellement"
+                    value={formData.dateRenouvellement}
+                    onChange={handleInputChange}
+                    className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">Un rappel apparaîtra 7 jours avant cette date</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Ordonnance (image)</label>
+                  <div className="mt-1 flex items-center gap-4 flex-wrap">
+                    <label className="cursor-pointer flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg border border-gray-300 transition-colors">
+                      <PhotoIcon className="h-5 w-5" /> Choisir une image
+                      <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
+                    </label>
+                    {formData.ordonnanceFile && <span className="text-sm text-gray-600">{formData.ordonnanceFile.name}</span>}
+                    {formData.ordonnanceUrl && !formData.ordonnanceFile && (
+                      <a href={formData.ordonnanceUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-indigo-600 hover:underline">
+                        Voir l'image actuelle
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Barre de progression upload */}
               {isUploading && (
                 <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
-                  <motion.div initial={{ width: '10%' }} animate={{ width: '90%' }} transition={{ duration: 1.2 }} className="h-2.5 rounded-full" style={{ background: C.teal }} />
+                  <motion.div
+                    initial={{ width: '10%' }}
+                    animate={{ width: '90%' }}
+                    transition={{ duration: 1.2 }}
+                    className="h-2.5 rounded-full"
+                    style={{ background: C.teal }}
+                  />
                 </div>
               )}
+
+              {/* Boutons */}
               <div className="flex gap-3 pt-2">
-                <button type="submit" disabled={isUploading} className={`flex-1 text-white font-semibold py-2.5 rounded-lg transition-colors ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`} style={{ background: C.teal }}>
+                <button
+                  type="submit"
+                  disabled={isUploading}
+                  className={`flex-1 text-white font-semibold py-2.5 rounded-lg transition-colors ${
+                    isUploading ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
+                  style={{ background: C.teal }}
+                >
                   {isUploading ? 'Envoi...' : editingPatient ? 'Mettre à jour' : 'Ajouter'}
                 </button>
-                <button type="button" onClick={resetForm} className="flex-1 border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium py-2.5 rounded-lg transition-colors">Annuler</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ============================================================
-   PAGE : Stock & péremptions
-   ============================================================ */
-function InventairePage() {
-  const { user } = useAuth();
-  const { dark } = useUIStore();
-  const { push } = useToastStore();
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState('tous');
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState(null);
-  const [formData, setFormData] = useState({ nom: '', categorie: '', quantite: '', seuilAlerte: '', datePeremption: '', prix: '' });
-
-  useEffect(() => {
-    if (!user) return;
-    const q = query(collection(db, 'inventaire'), where('pharmacienId', '==', user.uid), orderBy('nom'));
-    const unsub = onSnapshot(q, (snap) => { setItems(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); setLoading(false); },
-      (err) => { push('Erreur de chargement : ' + err.message, 'error'); setLoading(false); });
-    return unsub;
-  }, [user]);
-
-  const resetForm = () => {
-    setFormData({ nom: '', categorie: '', quantite: '', seuilAlerte: '', datePeremption: '', prix: '' });
-    setEditingItem(null);
-    setIsModalOpen(false);
-  };
-  const openAddModal = () => { resetForm(); setIsModalOpen(true); };
-  const openEditModal = (item) => {
-    setEditingItem(item);
-    setFormData({
-      nom: item.nom || '', categorie: item.categorie || '', quantite: item.quantite ?? '', seuilAlerte: item.seuilAlerte ?? '',
-      datePeremption: item.datePeremption ? toDate(item.datePeremption).toISOString().slice(0, 10) : '', prix: item.prix ?? ''
-    });
-    setIsModalOpen(true);
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    try {
-      const data = {
-        nom: formData.nom, categorie: formData.categorie,
-        quantite: Number(formData.quantite) || 0, seuilAlerte: Number(formData.seuilAlerte) || 0,
-        datePeremption: formData.datePeremption ? new Date(formData.datePeremption).toISOString() : null,
-        prix: Number(formData.prix) || 0, pharmacienId: user.uid, updatedAt: serverTimestamp()
-      };
-      if (editingItem) {
-        await updateDoc(doc(db, 'inventaire', editingItem.id), data);
-        push('Article mis à jour', 'success');
-      } else {
-        await addDoc(collection(db, 'inventaire'), { ...data, createdAt: serverTimestamp() });
-        push('Article ajouté', 'success');
-      }
-      resetForm();
-    } catch (err) {
-      push('Erreur : ' + err.message, 'error');
-    }
-  };
-
-  const handleDelete = async (id) => {
-    if (!confirm('Supprimer cet article du stock ?')) return;
-    try { await deleteDoc(doc(db, 'inventaire', id)); push('Article supprimé', 'success'); }
-    catch (err) { push('Erreur : ' + err.message, 'error'); }
-  };
-
-  const enriched = items.map((i) => {
-    const joursPeremption = daysUntil(i.datePeremption);
-    const stockFaible = (i.quantite ?? 0) <= (i.seuilAlerte ?? 0);
-    const peremptionProche = joursPeremption !== null && joursPeremption <= 30;
-    return { ...i, joursPeremption, stockFaible, peremptionProche };
-  }).filter((i) => i.nom.toLowerCase().includes(search.toLowerCase()))
-    .filter((i) => filter === 'tous' || (filter === 'stock' && i.stockFaible) || (filter === 'peremption' && i.peremptionProche));
-
-  if (loading) return <div className={`p-6 ${dark ? 'text-white/60' : 'text-gray-500'}`}>Chargement du stock...</div>;
-
-  return (
-    <div className="p-4 md:p-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-        <div>
-          <h1 className={`font-display text-2xl ${dark ? 'text-white' : 'text-gray-800'}`}>Stock & péremptions</h1>
-          <p className={`text-sm ${dark ? 'text-white/50' : 'text-gray-500'}`}>{enriched.length} article(s)</p>
-        </div>
-        <button onClick={openAddModal} className="flex items-center gap-2 text-white px-4 py-2 rounded-lg transition-transform hover:scale-[1.02]" style={{ background: C.teal }}>
-          <PlusIcon className="h-5 w-5" /> Ajouter un article
-        </button>
-      </div>
-
-      <div className="flex flex-col sm:flex-row gap-3 mb-4">
-        <div className="relative flex-1">
-          <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Rechercher un article..."
-            className={`w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 outline-none ${dark ? 'bg-[#0F2E29] border-white/10 text-white placeholder:text-white/30' : 'border-gray-300 bg-white'}`} />
-        </div>
-        <div className="flex gap-2">
-          {[['tous', 'Tous'], ['stock', 'Stock faible'], ['peremption', 'Péremption proche']].map(([key, label]) => (
-            <button key={key} onClick={() => setFilter(key)} className={`px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${filter === key ? 'text-white' : (dark ? 'text-white/50 border-white/10' : 'text-gray-500 border-gray-200')}`} style={filter === key ? { background: C.teal, borderColor: C.teal } : {}}>
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {enriched.length === 0 ? (
-        <div className="text-center py-12 rounded-xl border" style={{ background: dark ? C.cardDark : C.card, borderColor: dark ? '#ffffff14' : '#00000010' }}>
-          <ArchiveBoxIcon className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-          <p className={dark ? 'text-white/50' : 'text-gray-500'}>Aucun article trouvé</p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {enriched.map((item) => (
-            <div key={item.id} className="p-4 rounded-xl" style={{ background: dark ? C.cardDark : C.card, border: `1px solid ${(item.stockFaible || item.peremptionProche) ? C.clay + '55' : (dark ? '#ffffff14' : '#00000010')}` }}>
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className={`font-semibold ${dark ? 'text-white' : 'text-gray-800'}`}>{item.nom}</p>
-                  {item.categorie && <p className={`text-xs flex items-center gap-1 mt-0.5 ${dark ? 'text-white/40' : 'text-gray-400'}`}><TagIcon className="h-3 w-3" /> {item.categorie}</p>}
-                </div>
-                <div className="flex gap-1">
-                  <button onClick={() => openEditModal(item)} className="p-1.5 text-gray-400 hover:text-indigo-600 rounded-lg hover:bg-indigo-50"><PencilSquareIcon className="h-5 w-5" /></button>
-                  <button onClick={() => handleDelete(item.id)} className="p-1.5 text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50"><TrashIcon className="h-5 w-5" /></button>
-                </div>
-              </div>
-              <div className="flex items-center justify-between mt-3">
-                <span className={`text-sm font-mono ${item.stockFaible ? 'text-red-500 font-semibold' : (dark ? 'text-white/70' : 'text-gray-600')}`}>Qté : {item.quantite}</span>
-                {item.prix > 0 && <span className={`text-sm font-mono ${dark ? 'text-white/50' : 'text-gray-500'}`}>{item.prix} FCFA</span>}
-              </div>
-              {item.datePeremption && (
-                <div className={`mt-2 text-xs px-2 py-1 rounded-lg inline-flex items-center gap-1 ${item.peremptionProche ? 'bg-red-50 text-red-600' : (dark ? 'text-white/40' : 'text-gray-400')}`}>
-                  <ExclamationTriangleIcon className="h-3.5 w-3.5" />
-                  {item.joursPeremption < 0 ? 'Périmé' : `Péremption dans ${item.joursPeremption}j`}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="font-display text-xl text-gray-800">{editingItem ? "Modifier l'article" : 'Ajouter un article'}</h2>
-              <button onClick={resetForm} className="text-gray-400 hover:text-gray-600"><XMarkIcon className="h-6 w-6" /></button>
-            </div>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Nom du produit *</label>
-                <input value={formData.nom} onChange={(e) => setFormData({ ...formData, nom: e.target.value })} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" required />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Catégorie</label>
-                <input value={formData.categorie} onChange={(e) => setFormData({ ...formData, categorie: e.target.value })} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" placeholder="Antibiotique, antalgique..." />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Quantité *</label>
-                  <input type="number" min="0" value={formData.quantite} onChange={(e) => setFormData({ ...formData, quantite: e.target.value })} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" required />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Seuil d'alerte *</label>
-                  <input type="number" min="0" value={formData.seuilAlerte} onChange={(e) => setFormData({ ...formData, seuilAlerte: e.target.value })} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" required />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Date de péremption</label>
-                  <input type="date" value={formData.datePeremption} onChange={(e) => setFormData({ ...formData, datePeremption: e.target.value })} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Prix (FCFA)</label>
-                  <input type="number" min="0" value={formData.prix} onChange={(e) => setFormData({ ...formData, prix: e.target.value })} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" />
-                </div>
-              </div>
-              <div className="flex gap-3 pt-2">
-                <button type="submit" className="flex-1 text-white font-semibold py-2.5 rounded-lg" style={{ background: C.teal }}>{editingItem ? 'Mettre à jour' : 'Ajouter'}</button>
-                <button type="button" onClick={resetForm} className="flex-1 border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium py-2.5 rounded-lg">Annuler</button>
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="flex-1 border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium py-2.5 rounded-lg transition-colors"
+                >
+                  Annuler
+                </button>
               </div>
             </form>
           </div>
@@ -1482,7 +1750,6 @@ function AppRoutes() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/dashboard" element={<PrivateRoute><LayoutWithSidebar><DashboardPage /></LayoutWithSidebar></PrivateRoute>} />
       <Route path="/patients" element={<PrivateRoute><LayoutWithSidebar><PatientsPage /></LayoutWithSidebar></PrivateRoute>} />
-      <Route path="/stock" element={<PrivateRoute><LayoutWithSidebar><InventairePage /></LayoutWithSidebar></PrivateRoute>} />
       <Route path="/assistant" element={<PrivateRoute><LayoutWithSidebar><AssistantPage /></LayoutWithSidebar></PrivateRoute>} />
       <Route path="/stats" element={<PrivateRoute><LayoutWithSidebar><StatsPage /></LayoutWithSidebar></PrivateRoute>} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

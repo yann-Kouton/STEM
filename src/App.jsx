@@ -2,6 +2,8 @@ import { BrowserRouter, Routes, Route, Navigate, Link, useLocation, useNavigate,
 import { useState, useEffect, useMemo, useRef, useCallback, createContext, useContext } from 'react';
 import { create } from 'zustand';
 import { motion, AnimatePresence } from 'framer-motion';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell
@@ -141,27 +143,6 @@ function ToastStack() {
     </div>
   );
 }
-
-const INTERACTIONS = [
-  { a: 'Warfarine', b: 'Aspirine', niveau: 'majeure', detail: "Risque hémorragique fortement augmenté par effet antiagrégant additionné à l'anticoagulant." },
-  { a: 'Warfarine', b: 'Paracétamol', niveau: 'moderee', detail: "Un usage prolongé à forte dose peut potentialiser l'effet anticoagulant : surveiller l'INR." },
-  { a: 'Aspirine', b: 'Ibuprofène', niveau: 'moderee', detail: "L'ibuprofène peut réduire l'effet cardioprotecteur de l'aspirine à faible dose." },
-  { a: 'Enalapril', b: 'Spironolactone', niveau: 'majeure', detail: "Association à risque d'hyperkaliémie ; surveillance du potassium recommandée." },
-  { a: 'Metformine', b: 'Produit de contraste iodé', niveau: 'majeure', detail: "Risque d'acidose lactique : interrompre la metformine avant un examen avec produit de contraste." },
-  { a: 'Tramadol', b: 'Fluoxétine', niveau: 'majeure', detail: "Risque de syndrome sérotoninergique lors de l'association de deux agents sérotoninergiques." },
-  { a: 'Simvastatine', b: 'Erythromycine', niveau: 'majeure', detail: "Inhibition du métabolisme de la statine : risque accru de rhabdomyolyse." },
-  { a: 'Ciprofloxacine', b: 'Antiacide (Al/Mg)', niveau: 'moderee', detail: "Chélation réduisant l'absorption digestive de la quinolone : espacer les prises de 2 à 4 h." },
-  { a: 'Digoxine', b: 'Furosémide', niveau: 'moderee', detail: "L'hypokaliémie induite par le diurétique augmente le risque de toxicité digitalique." },
-  { a: 'Amoxicilline', b: 'Contraceptif oral', niveau: 'mineure', detail: "Diminution possible mais rare de l'efficacité contraceptive : conseiller une méthode barrière additionnelle." },
-];
-const MOLECULES = Array.from(new Set(INTERACTIONS.flatMap((i) => [i.a, i.b]))).sort();
-
-const POSOLOGIES_PEDIATRIQUES = [
-  { nom: 'Paracétamol', mgParKg: 15, maxParJour: 60, unite: 'mg/kg/prise (max 4 prises/j)' },
-  { nom: 'Ibuprofène', mgParKg: 7.5, maxParJour: 30, unite: 'mg/kg/prise (max 3 à 4 prises/j)' },
-  { nom: 'Amoxicilline', mgParKg: 25, maxParJour: 80, unite: 'mg/kg/j en 2 à 3 prises' },
-  { nom: 'Azithromycine', mgParKg: 10, maxParJour: 10, unite: 'mg/kg/j en 1 prise (J1), 5mg/kg J2-J5' },
-];
 
 function toDate(v) {
   if (!v) return null;
@@ -478,7 +459,7 @@ function CommandPalette() {
     { label: 'Patients', icon: UsersIcon, run: () => navigate('/patients') },
     { label: 'Ajouter un patient', icon: UserPlusIcon, run: () => navigate('/patients?action=add') },
     { label: 'Rechercher un patient', icon: MagnifyingGlassIcon, run: () => navigate('/patients?focus=search') },
-    { label: 'Assistant IA', icon: ChatBubbleLeftRightIcon, run: () => navigate('/assistant') },
+    { label: 'Vignon IA', icon: ChatBubbleLeftRightIcon, run: () => navigate('/assistant') },
     { label: 'Statistiques', icon: ChartBarIcon, run: () => navigate('/stats') },
     { label: 'Basculer le mode sombre', icon: MoonIcon, run: () => toggleDark() },
     { label: 'Déconnexion', icon: ArrowLeftOnRectangleIcon, run: () => logout() },
@@ -557,7 +538,7 @@ function Sidebar() {
   const navItems = [
     { path: '/dashboard', label: 'Tableau de bord', icon: HomeIcon },
     { path: '/patients', label: 'Patients', icon: UsersIcon },
-    { path: '/assistant', label: 'Assistant IA', icon: ChatBubbleLeftRightIcon },
+    { path: '/assistant', label: 'Vignon IA', icon: ChatBubbleLeftRightIcon },
     { path: '/stats', label: 'Statistiques', icon: ChartBarIcon },
   ];
 
@@ -1396,8 +1377,76 @@ function PatientsPage() {
   );
 }
 
+// === Rendu markdown compact pour les bulles du chat assistant ===
+function ChatMarkdown({ content, dark, isUser }) {
+  const linkColor = isUser ? '#FFFFFF' : C.teal;
+  const subtleBg = dark ? 'bg-black/25' : 'bg-black/5';
+  const subtleBorder = dark ? 'border-white/10' : 'border-gray-200';
+
+  return (
+    <div className="text-sm leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          p: ({ children }) => <p className="mb-2 whitespace-pre-wrap">{children}</p>,
+          strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+          em: ({ children }) => <em className="italic">{children}</em>,
+          ul: ({ children }) => <ul className="list-disc pl-5 mb-2 space-y-0.5">{children}</ul>,
+          ol: ({ children }) => <ol className="list-decimal pl-5 mb-2 space-y-0.5">{children}</ol>,
+          li: ({ children }) => <li className="leading-snug">{children}</li>,
+          a: ({ href, children }) => (
+            <a
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline underline-offset-2 font-medium"
+              style={{ color: linkColor }}
+            >
+              {children}
+            </a>
+          ),
+          h1: ({ children }) => <p className="font-display text-base font-semibold mb-1.5">{children}</p>,
+          h2: ({ children }) => <p className="font-display text-base font-semibold mb-1.5">{children}</p>,
+          h3: ({ children }) => <p className="font-semibold mb-1">{children}</p>,
+          blockquote: ({ children }) => (
+            <blockquote className={`border-l-2 pl-3 my-2 italic opacity-90 ${subtleBorder}`}>{children}</blockquote>
+          ),
+          hr: () => <hr className={`my-2 ${subtleBorder}`} />,
+          code: ({ inline, children }) =>
+            inline ? (
+              <code className={`px-1 py-0.5 rounded text-[0.8em] font-mono ${subtleBg}`}>{children}</code>
+            ) : (
+              <pre className={`rounded-lg p-3 my-2 overflow-x-auto text-xs font-mono ${subtleBg}`}>
+                <code>{children}</code>
+              </pre>
+            ),
+          table: ({ children }) => (
+            <div className="overflow-x-auto my-2">
+              <table className="text-xs border-collapse w-full">{children}</table>
+            </div>
+          ),
+          th: ({ children }) => <th className={`border px-2 py-1 text-left font-semibold ${subtleBorder}`}>{children}</th>,
+          td: ({ children }) => <td className={`border px-2 py-1 ${subtleBorder}`}>{children}</td>,
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+// Extrait le prénom depuis le displayName Firebase ("Dr. Prenom Nom" -> "Prenom")
+function getPharmacienFirstName(user) {
+  if (!user) return null;
+  const raw = user.displayName || '';
+  const withoutTitle = raw.replace(/^Dr\.?\s*/i, '').trim();
+  if (withoutTitle) return withoutTitle.split(/\s+/)[0];
+  if (user.email) return user.email.split('@')[0];
+  return null;
+}
+
 function executeAction(action, params, context) {
-  const { push, navigate, patients, setDetailPatient, setVisitPatient } = context;
+  const { navigate, patients, setDetailPatient } = context;
 
   switch (action) {
     case 'searchPatient':
@@ -1432,41 +1481,6 @@ function executeAction(action, params, context) {
       }
       return '❌ Veuillez préciser un patient (nom ou ID)';
 
-    case 'addConsultation':
-      if (params.patientId) {
-        const patient = patients.find(p => p.id === params.patientId);
-        if (patient) {
-          setVisitPatient(patient);
-          return `🩺 Consultation en cours pour ${patient.prenom} ${patient.nom}`;
-        }
-        return `❌ Patient non trouvé`;
-      }
-      return '❌ Veuillez préciser le patient';
-
-    case 'listPatients':
-      return `👥 ${patients.length} patient(s) actif(s) dans votre base.`;
-
-    case 'checkInteraction':
-      const { moleculeA, moleculeB } = params;
-      if (!moleculeA || !moleculeB) return '❌ Veuillez fournir deux molécules.';
-      const inter = INTERACTIONS.find(i =>
-        (i.a === moleculeA && i.b === moleculeB) ||
-        (i.a === moleculeB && i.b === moleculeA)
-      );
-      if (inter) {
-        return `⚠️ Interaction ${inter.niveau} entre ${moleculeA} et ${moleculeB} : ${inter.detail}`;
-      }
-      return `✅ Aucune interaction connue entre ${moleculeA} et ${moleculeB}.`;
-
-    case 'calculateDosage':
-      const { molecule, weight } = params;
-      if (!molecule || !weight) return '❌ Veuillez fournir une molécule et un poids.';
-      const poso = POSOLOGIES_PEDIATRIQUES.find(p => p.nom.toLowerCase() === molecule.toLowerCase());
-      if (!poso) return `❌ Molécule "${molecule}" non reconnue.`;
-      const dose = weight * poso.mgParKg;
-      const maxDose = Math.min(dose, weight * poso.maxParJour);
-      return `💊 ${molecule} : ${dose.toFixed(1)} mg par prise (max ${maxDose.toFixed(0)} mg/jour) – ${poso.unite}`;
-
     default:
       return `❌ Action "${action}" non reconnue.`;
   }
@@ -1476,10 +1490,12 @@ function AssistantPage() {
   const { dark } = useUIStore();
   const { push } = useToastStore();
   const navigate = useNavigate();
+  const { user } = useAuth();
+
+  const pharmacienName = getPharmacienFirstName(user);
 
   const [patients, setPatients] = useState([]);
   const [detailPatient, setDetailPatient] = useState(null);
-  const [visitPatient, setVisitPatient] = useState(null);
 
   const savedMessages = localStorage.getItem('vignon_chat_messages');
   const initialMessages = savedMessages
@@ -1487,8 +1503,7 @@ function AssistantPage() {
     : [
         {
           role: 'assistant',
-          content:
-            'Bonjour, je suis Vignon, votre assistant médical. Je peux rechercher des patients, afficher leurs fiches, ajouter des consultations, vérifier des interactions, calculer des posologies... Que puis-je faire pour vous ?',
+          content: `Bonjour${pharmacienName ? ` ${pharmacienName}` : ''}, je suis Vignon, votre assistant médical. Je peux rechercher des patients et afficher leurs fiches, et répondre à vos questions générales — au besoin en cherchant sur internet des informations à jour. Que puis-je faire pour vous ?`,
         },
       ];
 
@@ -1498,6 +1513,15 @@ function AssistantPage() {
 
   const chatContainerRef = useRef(null);
   const inputRef = useRef(null);
+
+  useEffect(() => {
+    if (!user) return;
+    const q = query(collection(db, 'patients'), where('pharmacienId', '==', user.uid));
+    const unsub = onSnapshot(q, (snap) => {
+      setPatients(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    });
+    return unsub;
+  }, [user]);
 
   useEffect(() => {
     localStorage.setItem('vignon_chat_messages', JSON.stringify(messages));
@@ -1513,7 +1537,7 @@ function AssistantPage() {
     inputRef.current?.focus();
   }, []);
 
-  const MODEL = 'mistral-medium';
+  const MODEL = 'mistral-medium-latest';
   const isDev = import.meta.env.DEV;
 
   const sendToAssistant = async (messages) => {
@@ -1523,7 +1547,7 @@ function AssistantPage() {
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages, model: MODEL }),
+      body: JSON.stringify({ messages, model: MODEL, userName: pharmacienName }),
     });
     if (!response.ok) {
       const error = await response.text();
@@ -1552,9 +1576,7 @@ function AssistantPage() {
           push,
           navigate,
           patients,
-          setPatients,
           setDetailPatient,
-          setVisitPatient,
         };
         const actionResult = executeAction(action.type, action.params, context);
         assistantContent += `\n\n${actionResult}`;
@@ -1583,8 +1605,7 @@ function AssistantPage() {
     if (messages.length > 1 && !confirm('Voulez-vous vraiment effacer cette conversation ?')) return;
     const welcomeMessage = {
       role: 'assistant',
-      content:
-        'Bonjour, je suis Vignon, votre assistant médical. Je peux rechercher des patients, afficher leurs fiches, ajouter des consultations, vérifier des interactions, calculer des posologies... Que puis-je faire pour vous ?',
+      content: `Bonjour${pharmacienName ? ` ${pharmacienName}` : ''}, je suis Vignon, votre assistant médical. Je peux rechercher des patients et afficher leurs fiches, et répondre à vos questions générales — au besoin en cherchant sur internet des informations à jour. Que puis-je faire pour vous ?`,
     };
     setMessages([welcomeMessage]);
     localStorage.setItem('vignon_chat_messages', JSON.stringify([welcomeMessage]));
@@ -1618,7 +1639,7 @@ function AssistantPage() {
         {messages.map((msg, idx) => (
           <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div
-              className={`max-w-3/4 px-4 py-2 rounded-2xl ${
+              className={`max-w-[85%] sm:max-w-[75%] px-4 py-2.5 rounded-2xl ${
                 msg.role === 'user'
                   ? dark
                     ? 'bg-teal-700 text-white'
@@ -1628,7 +1649,7 @@ function AssistantPage() {
                   : 'bg-gray-100 text-gray-800'
               }`}
             >
-              <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+              <ChatMarkdown content={msg.content} dark={dark} isUser={msg.role === 'user'} />
             </div>
           </div>
         ))}
@@ -1670,6 +1691,15 @@ function AssistantPage() {
           <PaperAirplaneIcon className="h-5 w-5" />
         </button>
       </div>
+
+      {detailPatient && (
+        <PatientDetailDrawer
+          patient={patients.find((p) => p.id === detailPatient.id) || detailPatient}
+          onClose={() => setDetailPatient(null)}
+          dark={dark}
+        />
+      )}
+      {detailPatient && <div className="fixed inset-0 bg-black/30 z-40" onClick={() => setDetailPatient(null)} />}
     </div>
   );
 }

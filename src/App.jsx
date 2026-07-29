@@ -15,15 +15,38 @@ import {
   ClockIcon, ChevronRightIcon, BeakerIcon, ScaleIcon,
   ShieldExclamationIcon, CheckCircleIcon, InformationCircleIcon, ExclamationTriangleIcon,
   CalendarDaysIcon, Bars3Icon, SparklesIcon, ArrowPathIcon,
-  PaperAirplaneIcon, ChevronDownIcon
+  PaperAirplaneIcon, ChevronDownIcon,
+  EyeIcon, EyeSlashIcon  // ← Ajout des icônes pour afficher/masquer le mot de passe
 } from '@heroicons/react/24/outline';
 import { sendPasswordResetEmail, sendEmailVerification, updateProfile } from 'firebase/auth';
-import { auth, db, storage } from './firebase/config';
+import { auth, db } from './firebase/config';
 import {
   collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, query,
   orderBy, serverTimestamp, where, arrayUnion, setDoc
 } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+
+const CLOUDINARY_CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
+const CLOUDINARY_UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
+
+// === Fonction d'upload vers Cloudinary ===
+async function uploadToCloudinary(file) {
+  if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_UPLOAD_PRESET) {
+    throw new Error('Cloudinary non configuré. Vérifiez vos variables d\'environnement.');
+  }
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+  const response = await fetch(
+    `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
+    { method: 'POST', body: formData }
+  );
+  if (!response.ok) {
+    const errorData = await response.json();
+    throw new Error(errorData.error?.message || 'Erreur lors de l\'upload vers Cloudinary');
+  }
+  const data = await response.json();
+  return data.secure_url;
+}
 
 const C = {
   ink: '#0B2B26',
@@ -185,6 +208,7 @@ function LoginPage() {
   const [isRegister, setIsRegister] = useState(false);
   const [showReset, setShowReset] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
+  const [showPassword, setShowPassword] = useState(false); // État pour afficher/masquer le mot de passe
   const { login, register, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
 
@@ -354,13 +378,29 @@ function LoginPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Mot de passe</label>
-                  <div className="relative mt-1">
+                  <div className="relative mt-1 flex items-center">
                     <LockClosedIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
                     <input
-                      type="password" value={password} onChange={(e) => setPassword(e.target.value)}
-                      className="pl-10 w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 outline-none"
-                      placeholder="••••••••" required minLength={6}
+                      type={showPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="pl-10 pr-10 w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 outline-none"
+                      placeholder="••••••••"
+                      required
+                      minLength={6}
                     />
+                    <button
+                      type="button"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      onClick={() => setShowPassword(!showPassword)}
+                      tabIndex={-1}
+                    >
+                      {showPassword ? (
+                        <EyeSlashIcon className="h-5 w-5" />
+                      ) : (
+                        <EyeIcon className="h-5 w-5" />
+                      )}
+                    </button>
                   </div>
                 </div>
                 {!isRegister && (
@@ -905,23 +945,13 @@ function PatientsPage() {
     setIsModalOpen(true);
   };
 
-  const uploadOrdonnance = async (file, patientId) => {
-    if (!file) return null;
-    const storageRef = ref(storage, `ordonnances/${user.uid}/${patientId}/${file.name}`);
-    const snapshot = await uploadBytes(storageRef, file);
-    return getDownloadURL(snapshot.ref);
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsUploading(true);
     try {
       let ordonnanceUrl = formData.ordonnanceUrl;
       if (formData.ordonnanceFile) {
-        if (editingPatient?.ordonnanceUrl) {
-          try { await deleteObject(ref(storage, editingPatient.ordonnanceUrl)); } catch { /* ignore */ }
-        }
-        ordonnanceUrl = await uploadOrdonnance(formData.ordonnanceFile, editingPatient ? editingPatient.id : 'temp');
+        ordonnanceUrl = await uploadToCloudinary(formData.ordonnanceFile);
       }
       const patientData = {
         nom: formData.nom, prenom: formData.prenom, genre: formData.genre,
@@ -960,10 +990,6 @@ function PatientsPage() {
   const handleDelete = async (id) => {
     if (!confirm('Êtes-vous sûr de vouloir supprimer ce patient ?')) return;
     try {
-      const patient = patients.find((p) => p.id === id);
-      if (patient?.ordonnanceUrl) {
-        try { await deleteObject(ref(storage, patient.ordonnanceUrl)); } catch { /* ignore */ }
-      }
       await deleteDoc(doc(db, 'patients', id));
       push('Patient supprimé', 'success');
     } catch (err) {

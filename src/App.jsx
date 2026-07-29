@@ -16,7 +16,7 @@ import {
   ShieldExclamationIcon, CheckCircleIcon, InformationCircleIcon, ExclamationTriangleIcon,
   CalendarDaysIcon, Bars3Icon, SparklesIcon, ArrowPathIcon,
   PaperAirplaneIcon, ChevronDownIcon,
-  EyeIcon, EyeSlashIcon  // ← Ajout des icônes pour afficher/masquer le mot de passe
+  EyeIcon, EyeSlashIcon
 } from '@heroicons/react/24/outline';
 import { sendPasswordResetEmail, sendEmailVerification, updateProfile } from 'firebase/auth';
 import { auth, db } from './firebase/config';
@@ -182,6 +182,35 @@ function normalizePhoneForWhatsApp(telephone) {
   return clean;
 }
 
+// Fonction de calcul d'âge
+function calculAge(dateNaissance) {
+  if (!dateNaissance) return null;
+  const naissance = toDate(dateNaissance);
+  if (!naissance) return null;
+  const now = new Date();
+  let age = now.getFullYear() - naissance.getFullYear();
+  const mois = now.getMonth() - naissance.getMonth();
+  if (mois < 0 || (mois === 0 && now.getDate() < naissance.getDate())) {
+    age--;
+  }
+  return age;
+}
+
+// Fonction pour capitaliser la première lettre de chaque phrase
+function capitalizeSentences(text) {
+  if (!text) return text;
+  // Diviser le texte en phrases en utilisant les séparateurs . ? !
+  const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
+  // Capitaliser la première lettre de chaque phrase
+  const capitalized = sentences.map(sentence => {
+    const trimmed = sentence.trim();
+    if (trimmed.length === 0) return sentence;
+    return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+  });
+  // Rejoindre les phrases avec un espace (ou conserver la ponctuation)
+  return capitalized.join(' ');
+}
+
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth();
   const dark = useUIStore((s) => s.dark);
@@ -208,7 +237,7 @@ function LoginPage() {
   const [isRegister, setIsRegister] = useState(false);
   const [showReset, setShowReset] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
-  const [showPassword, setShowPassword] = useState(false); // État pour afficher/masquer le mot de passe
+  const [showPassword, setShowPassword] = useState(false);
   const { login, register, loginWithGoogle } = useAuth();
   const navigate = useNavigate();
 
@@ -739,6 +768,8 @@ function DashboardPage() {
 
 function PatientDetailDrawer({ patient, onClose, dark }) {
   const historique = [...(patient.historique || [])].sort((a, b) => toDate(b.date) - toDate(a.date));
+  const age = calculAge(patient.dateNaissance);
+
   return (
     <motion.div
       initial={{ x: '100%' }}
@@ -774,8 +805,19 @@ function PatientDetailDrawer({ patient, onClose, dark }) {
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 mt-3 text-sm">
             <div><dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Genre</dt><dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.genre || '—'}</dd></div>
             <div><dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Date de naissance</dt><dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.dateNaissance ? formatDate(patient.dateNaissance) : '—'}</dd></div>
+            <div><dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Âge</dt><dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{age !== null ? `${age} ans` : '—'}</dd></div>
             <div className="col-span-2"><dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Adresse</dt><dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.adresse || '—'}</dd></div>
-            <div><dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Assurance</dt><dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.assurance || '—'}</dd></div>
+            <div className="col-span-2"><dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Assurance</dt>
+              <dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>
+                {patient.assuranceNom ? (
+                  <div>
+                    <div><span className="text-xs opacity-60">Nom :</span> {patient.assuranceNom}</div>
+                    <div><span className="text-xs opacity-60">Matricule :</span> {patient.assuranceMatricule || '—'}</div>
+                    <div><span className="text-xs opacity-60">N° affilié :</span> {patient.assuranceNumeroAffilie || '—'}</div>
+                  </div>
+                ) : '—'}
+              </dd>
+            </div>
             <div><dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Contact 2</dt><dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.contact2 || '—'}</dd></div>
           </dl>
         </div>
@@ -784,8 +826,16 @@ function PatientDetailDrawer({ patient, onClose, dark }) {
             II. Données médicales
           </h4>
           <dl className="grid grid-cols-1 gap-y-2 mt-3 text-sm">
-            <div><dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Allergie médicamenteuse</dt><dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.allergieMedicamenteuse === 'OUI' ? <span className="text-red-600">OUI — {patient.allergiePrecision || 'non précisé'}</span> : 'NON'}</dd></div>
-            <div><dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Antécédent maladie</dt><dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.antecedentMaladie === 'OUI' ? <span className="text-amber-600">OUI — {patient.antecedentPrecision || 'non précisé'}</span> : 'NON'}</dd></div>
+            <div><dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Allergies connues et intolérances</dt>
+              <dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>
+                {patient.allergieMedicamenteuse === 'OUI' ? <span className="text-red-600">OUI — {patient.allergiePrecision || 'non précisé'}</span> : 'NON'}
+              </dd>
+            </div>
+            <div><dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Status particulier (Asthme, Insuffisance rénale)</dt>
+              <dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>
+                {patient.antecedentMaladie === 'OUI' ? <span className="text-amber-600">OUI — {patient.antecedentPrecision || 'non précisé'}</span> : 'NON'}
+              </dd>
+            </div>
             <div><dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Pathologie chronique</dt><dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.pathologieChronique || '—'}</dd></div>
             <div><dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Traitement chronique</dt><dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.traitementChronique && patient.traitementChronique.length > 0 ? <ul className="list-disc list-inside space-y-0.5">{patient.traitementChronique.map((med, idx) => <li key={idx}>{med}</li>)}</ul> : '—'}</dd></div>
           </dl>
@@ -833,16 +883,29 @@ function PatientDetailDrawer({ patient, onClose, dark }) {
   );
 }
 
+// Modal de visite avec capitalisation en temps réel
 function VisitModal({ patient, onClose, onSave }) {
   const [objet, setObjet] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+
+  // Gestionnaires onChange avec capitalisation immédiate
+  const handleObjetChange = (e) => {
+    setObjet(capitalizeSentences(e.target.value));
+  };
+
+  const handleNotesChange = (e) => {
+    setNotes(capitalizeSentences(e.target.value));
+  };
+
   const submit = async (e) => {
     e.preventDefault();
     setSaving(true);
+    // Les données sont déjà capitalisées grâce aux onChange
     await onSave({ date: new Date().toISOString(), objet, notes });
     setSaving(false);
   };
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
       <motion.form initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} onSubmit={submit} className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
@@ -850,8 +913,25 @@ function VisitModal({ patient, onClose, onSave }) {
           <h3 className="font-display text-lg text-gray-800">Nouvelle consultation — {patient.prenom} {patient.nom}</h3>
           <button type="button" onClick={onClose}><XMarkIcon className="h-5 w-5 text-gray-400" /></button>
         </div>
-        <div><label className="block text-sm font-medium text-gray-700">Motif</label><input value={objet} onChange={(e) => setObjet(e.target.value)} required className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" placeholder="Fièvre, renouvellement, conseil..." /></div>
-        <div><label className="block text-sm font-medium text-gray-700">Notes</label><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows="3" className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" /></div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Motif</label>
+          <input
+            value={objet}
+            onChange={handleObjetChange}
+            required
+            className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
+            placeholder="Fièvre, renouvellement, conseil..."
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Notes</label>
+          <textarea
+            value={notes}
+            onChange={handleNotesChange}
+            rows="3"
+            className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
+          />
+        </div>
         <button disabled={saving} type="submit" className="w-full text-white font-semibold py-2.5 rounded-lg" style={{ background: C.teal }}>{saving ? 'Enregistrement...' : 'Enregistrer la visite'}</button>
       </motion.form>
     </div>
@@ -872,8 +952,11 @@ function PatientsPage() {
   const [visitPatient, setVisitPatient] = useState(null);
   const [detailPatient, setDetailPatient] = useState(null);
   const [formData, setFormData] = useState({
-    nom: '', prenom: '', genre: 'Homme', dateNaissance: '', adresse: '', assurance: '', contact1: '', contact2: '',
-    allergieMedicamenteuse: 'NON', allergiePrecision: '', antecedentMaladie: 'NON', antecedentPrecision: '',
+    nom: '', prenom: '', genre: 'Homme', dateNaissance: '', adresse: '',
+    assuranceNom: '', assuranceMatricule: '', assuranceNumeroAffilie: '',
+    contact1: '', contact2: '',
+    allergieMedicamenteuse: 'NON', allergiePrecision: '',
+    antecedentMaladie: 'NON', antecedentPrecision: '',
     pathologieChronique: '', traitementChronique: [''],
     tabagisme: 'NON', alcool: 'NON', cafe: 'NON', regimeParticulier: 'NON', regimePrecision: '',
     activitePhysique: 'NON', activitePrecision: '', metier: '',
@@ -903,14 +986,25 @@ function PatientsPage() {
     (p.contact1 || p.telephone || '').includes(searchTerm)
   );
 
-  const handleInputChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
+  // Fonction utilitaire pour créer un gestionnaire de changement avec capitalisation immédiate
+  const createCapitalizedChangeHandler = (field) => (e) => {
+    const value = e.target.value;
+    setFormData(prev => ({
+      ...prev,
+      [field]: capitalizeSentences(value)
+    }));
+  };
+
   const handleRadioChange = (e) => { setFormData({ ...formData, [e.target.name]: e.target.value }); };
   const handleFileChange = (e) => { const file = e.target.files[0]; if (file) setFormData({ ...formData, ordonnanceFile: file }); };
 
   const resetForm = () => {
     setFormData({
-      nom: '', prenom: '', genre: 'Homme', dateNaissance: '', adresse: '', assurance: '', contact1: '', contact2: '',
-      allergieMedicamenteuse: 'NON', allergiePrecision: '', antecedentMaladie: 'NON', antecedentPrecision: '',
+      nom: '', prenom: '', genre: 'Homme', dateNaissance: '', adresse: '',
+      assuranceNom: '', assuranceMatricule: '', assuranceNumeroAffilie: '',
+      contact1: '', contact2: '',
+      allergieMedicamenteuse: 'NON', allergiePrecision: '',
+      antecedentMaladie: 'NON', antecedentPrecision: '',
       pathologieChronique: '', traitementChronique: [''],
       tabagisme: 'NON', alcool: 'NON', cafe: 'NON', regimeParticulier: 'NON', regimePrecision: '',
       activitePhysique: 'NON', activitePrecision: '', metier: '',
@@ -927,7 +1021,10 @@ function PatientsPage() {
     setFormData({
       nom: patient.nom || '', prenom: patient.prenom || '', genre: patient.genre || 'Homme',
       dateNaissance: patient.dateNaissance ? toDate(patient.dateNaissance).toISOString().slice(0, 10) : '',
-      adresse: patient.adresse || '', assurance: patient.assurance || '',
+      adresse: patient.adresse || '',
+      assuranceNom: patient.assuranceNom || '',
+      assuranceMatricule: patient.assuranceMatricule || '',
+      assuranceNumeroAffilie: patient.assuranceNumeroAffilie || '',
       contact1: patient.contact1 || patient.telephone || '', contact2: patient.contact2 || '',
       allergieMedicamenteuse: patient.allergieMedicamenteuse || 'NON',
       allergiePrecision: patient.allergiePrecision || '',
@@ -953,10 +1050,14 @@ function PatientsPage() {
       if (formData.ordonnanceFile) {
         ordonnanceUrl = await uploadToCloudinary(formData.ordonnanceFile);
       }
+      // Les données sont déjà capitalisées grâce aux onChange, mais on s'assure une dernière fois
       const patientData = {
         nom: formData.nom, prenom: formData.prenom, genre: formData.genre,
         dateNaissance: formData.dateNaissance ? new Date(formData.dateNaissance).toISOString() : null,
-        adresse: formData.adresse, assurance: formData.assurance,
+        adresse: formData.adresse,
+        assuranceNom: formData.assuranceNom,
+        assuranceMatricule: formData.assuranceMatricule,
+        assuranceNumeroAffilie: formData.assuranceNumeroAffilie,
         contact1: formData.contact1, contact2: formData.contact2,
         allergieMedicamenteuse: formData.allergieMedicamenteuse,
         allergiePrecision: formData.allergiePrecision,
@@ -1091,24 +1192,136 @@ function PatientsPage() {
               <div className="border-b border-gray-200 pb-4">
                 <h3 className="font-display text-lg text-gray-800 mb-3">I. Données administratives</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div><label className="block text-sm font-medium text-gray-700">Nom *</label><input type="text" name="nom" value={formData.nom} onChange={handleInputChange} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" required /></div>
-                  <div><label className="block text-sm font-medium text-gray-700">Prénom(s) *</label><input type="text" name="prenom" value={formData.prenom} onChange={handleInputChange} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" required /></div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Nom *</label>
+                    <input
+                      type="text" name="nom" value={formData.nom}
+                      onChange={createCapitalizedChangeHandler('nom')}
+                      className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">Prénom(s) *</label>
+                    <input
+                      type="text" name="prenom" value={formData.prenom}
+                      onChange={createCapitalizedChangeHandler('prenom')}
+                      className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
+                      required
+                    />
+                  </div>
                 </div>
                 <div className="mt-3"><label className="block text-sm font-medium text-gray-700">Genre</label><div className="flex gap-4 mt-1"><label className="flex items-center gap-1"><input type="radio" name="genre" value="Homme" checked={formData.genre === 'Homme'} onChange={handleRadioChange} /> Homme</label><label className="flex items-center gap-1"><input type="radio" name="genre" value="Femme" checked={formData.genre === 'Femme'} onChange={handleRadioChange} /> Femme</label></div></div>
-                <div className="mt-3"><label className="block text-sm font-medium text-gray-700">Date de naissance</label><input type="date" name="dateNaissance" value={formData.dateNaissance} onChange={handleInputChange} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" /></div>
-                <div className="mt-3"><label className="block text-sm font-medium text-gray-700">Adresse</label><input type="text" name="adresse" value={formData.adresse} onChange={handleInputChange} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" /></div>
-                <div className="mt-3"><label className="block text-sm font-medium text-gray-700">Assurance</label><input type="text" name="assurance" value={formData.assurance} onChange={handleInputChange} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" placeholder="ex : Mutuelle, CNPS..." /></div>
+                <div className="mt-3"><label className="block text-sm font-medium text-gray-700">Date de naissance</label><input type="date" name="dateNaissance" value={formData.dateNaissance} onChange={handleRadioChange} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" /></div>
+                <div className="mt-3">
+                  <label className="block text-sm font-medium text-gray-700">Adresse</label>
+                  <input
+                    type="text" name="adresse" value={formData.adresse}
+                    onChange={createCapitalizedChangeHandler('adresse')}
+                    className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
+                  />
+                </div>
+                <div className="mt-3">
+                  <label className="block text-sm font-medium text-gray-700">Assurance</label>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-1">
+                    <input
+                      type="text" name="assuranceNom" value={formData.assuranceNom}
+                      onChange={createCapitalizedChangeHandler('assuranceNom')}
+                      placeholder="Nom (ex: CMU)"
+                      className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
+                    />
+                    <input
+                      type="text" name="assuranceMatricule" value={formData.assuranceMatricule}
+                      onChange={createCapitalizedChangeHandler('assuranceMatricule')}
+                      placeholder="Matricule"
+                      className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
+                    />
+                    <input
+                      type="text" name="assuranceNumeroAffilie" value={formData.assuranceNumeroAffilie}
+                      onChange={createCapitalizedChangeHandler('assuranceNumeroAffilie')}
+                      placeholder="N° affilié"
+                      className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
+                    />
+                  </div>
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
-                  <div><label className="block text-sm font-medium text-gray-700">Contact 1 *</label><input type="tel" name="contact1" value={formData.contact1} onChange={handleInputChange} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" required /></div>
-                  <div><label className="block text-sm font-medium text-gray-700">Contact 2</label><input type="tel" name="contact2" value={formData.contact2} onChange={handleInputChange} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" /></div>
+                  <div><label className="block text-sm font-medium text-gray-700">Contact 1 *</label><input type="tel" name="contact1" value={formData.contact1} onChange={handleRadioChange} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" required /></div>
+                  <div><label className="block text-sm font-medium text-gray-700">Contact 2</label><input type="tel" name="contact2" value={formData.contact2} onChange={handleRadioChange} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" /></div>
                 </div>
               </div>
               <div className="border-b border-gray-200 pb-4">
                 <h3 className="font-display text-lg text-gray-800 mb-3">II. Données médicales</h3>
-                <div><label className="block text-sm font-medium text-gray-700">Allergie médicamenteuse</label><div className="flex gap-4 mt-1"><label className="flex items-center gap-1"><input type="radio" name="allergieMedicamenteuse" value="OUI" checked={formData.allergieMedicamenteuse === 'OUI'} onChange={handleRadioChange} /> OUI</label><label className="flex items-center gap-1"><input type="radio" name="allergieMedicamenteuse" value="NON" checked={formData.allergieMedicamenteuse === 'NON'} onChange={handleRadioChange} /> NON</label></div>{formData.allergieMedicamenteuse === 'OUI' && <div className="mt-2"><label className="block text-sm font-medium text-gray-700">À préciser</label><input type="text" name="allergiePrecision" value={formData.allergiePrecision} onChange={handleInputChange} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" placeholder="ex : Pénicilline" /></div>}</div>
-                <div className="mt-3"><label className="block text-sm font-medium text-gray-700">Antécédent maladie</label><div className="flex gap-4 mt-1"><label className="flex items-center gap-1"><input type="radio" name="antecedentMaladie" value="OUI" checked={formData.antecedentMaladie === 'OUI'} onChange={handleRadioChange} /> OUI</label><label className="flex items-center gap-1"><input type="radio" name="antecedentMaladie" value="NON" checked={formData.antecedentMaladie === 'NON'} onChange={handleRadioChange} /> NON</label></div>{formData.antecedentMaladie === 'OUI' && <div className="mt-2"><label className="block text-sm font-medium text-gray-700">À préciser</label><input type="text" name="antecedentPrecision" value={formData.antecedentPrecision} onChange={handleInputChange} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" placeholder="ex : Diabète, HTA..." /></div>}</div>
-                <div className="mt-3"><label className="block text-sm font-medium text-gray-700">Pathologie chronique</label><input type="text" name="pathologieChronique" value={formData.pathologieChronique} onChange={handleInputChange} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" placeholder="ex : Diabète, HTA..." /></div>
-                <div className="mt-3"><label className="block text-sm font-medium text-gray-700">Traitement chronique</label><div className="space-y-2 mt-1">{formData.traitementChronique.map((med, index) => (<div key={index} className="flex items-center gap-2"><input type="text" value={med} onChange={(e) => { const newList = [...formData.traitementChronique]; newList[index] = e.target.value; setFormData({ ...formData, traitementChronique: newList }); }} placeholder={`Médicament ${index + 1}`} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" /><button type="button" onClick={() => { const newList = formData.traitementChronique.filter((_, i) => i !== index); setFormData({ ...formData, traitementChronique: newList.length ? newList : [''] }); }} className="text-red-500 hover:text-red-700 p-1"><XMarkIcon className="h-5 w-5" /></button></div>))}<button type="button" onClick={() => setFormData({ ...formData, traitementChronique: [...formData.traitementChronique, ''] })} className="text-sm text-teal-600 hover:underline">+ Ajouter un médicament</button></div></div>
+                <div><label className="block text-sm font-medium text-gray-700">Allergies connues et intolérances</label><div className="flex gap-4 mt-1"><label className="flex items-center gap-1"><input type="radio" name="allergieMedicamenteuse" value="OUI" checked={formData.allergieMedicamenteuse === 'OUI'} onChange={handleRadioChange} /> OUI</label><label className="flex items-center gap-1"><input type="radio" name="allergieMedicamenteuse" value="NON" checked={formData.allergieMedicamenteuse === 'NON'} onChange={handleRadioChange} /> NON</label></div>
+                  {formData.allergieMedicamenteuse === 'OUI' && (
+                    <div className="mt-2">
+                      <label className="block text-sm font-medium text-gray-700">À préciser</label>
+                      <input
+                        type="text" name="allergiePrecision" value={formData.allergiePrecision}
+                        onChange={createCapitalizedChangeHandler('allergiePrecision')}
+                        className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
+                        placeholder="ex : Pénicilline"
+                      />
+                    </div>
+                  )}
+                </div>
+                <div className="mt-3"><label className="block text-sm font-medium text-gray-700">Status particulier (asthme, insuffisance rénale)</label><div className="flex gap-4 mt-1"><label className="flex items-center gap-1"><input type="radio" name="antecedentMaladie" value="OUI" checked={formData.antecedentMaladie === 'OUI'} onChange={handleRadioChange} /> OUI</label><label className="flex items-center gap-1"><input type="radio" name="antecedentMaladie" value="NON" checked={formData.antecedentMaladie === 'NON'} onChange={handleRadioChange} /> NON</label></div>
+                  {formData.antecedentMaladie === 'OUI' && (
+                    <div className="mt-2">
+                      <label className="block text-sm font-medium text-gray-700">À préciser</label>
+                      <input
+                        type="text" name="antecedentPrecision" value={formData.antecedentPrecision}
+                        onChange={createCapitalizedChangeHandler('antecedentPrecision')}
+                        className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
+                        placeholder="ex : Diabète, HTA..."
+                      />
+                    </div>
+                  )}
+                </div>
+                <div className="mt-3">
+                  <label className="block text-sm font-medium text-gray-700">Pathologie chronique</label>
+                  <input
+                    type="text" name="pathologieChronique" value={formData.pathologieChronique}
+                    onChange={createCapitalizedChangeHandler('pathologieChronique')}
+                    className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
+                    placeholder="ex : Diabète, HTA..."
+                  />
+                </div>
+                <div className="mt-3"><label className="block text-sm font-medium text-gray-700">Traitement chronique</label>
+                  <div className="space-y-2 mt-1">
+                    {formData.traitementChronique.map((med, index) => (
+                      <div key={index} className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={med}
+                          onChange={(e) => {
+                            const newList = [...formData.traitementChronique];
+                            newList[index] = capitalizeSentences(e.target.value);
+                            setFormData({ ...formData, traitementChronique: newList });
+                          }}
+                          placeholder={`Médicament ${index + 1}`}
+                          className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newList = formData.traitementChronique.filter((_, i) => i !== index);
+                            setFormData({ ...formData, traitementChronique: newList.length ? newList : [''] });
+                          }}
+                          className="text-red-500 hover:text-red-700 p-1"
+                        >
+                          <XMarkIcon className="h-5 w-5" />
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, traitementChronique: [...formData.traitementChronique, ''] })}
+                      className="text-sm text-teal-600 hover:underline"
+                    >
+                      + Ajouter un médicament
+                    </button>
+                  </div>
+                </div>
               </div>
               <div className="border-b border-gray-200 pb-4">
                 <h3 className="font-display text-lg text-gray-800 mb-3">III. Mode de vie</h3>
@@ -1121,16 +1334,53 @@ function PatientsPage() {
                         <label className="flex items-center gap-1"><input type="radio" name={field} value="OUI" checked={formData[field] === 'OUI'} onChange={handleRadioChange} /> OUI</label>
                         <label className="flex items-center gap-1"><input type="radio" name={field} value="NON" checked={formData[field] === 'NON'} onChange={handleRadioChange} /> NON</label>
                       </div>
-                      {field === 'regimeParticulier' && formData.regimeParticulier === 'OUI' && <div className="mt-2"><label className="block text-sm font-medium text-gray-700">Préciser</label><input type="text" name="regimePrecision" value={formData.regimePrecision} onChange={handleInputChange} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" placeholder="ex : Sans sel, végétarien..." /></div>}
-                      {field === 'activitePhysique' && formData.activitePhysique === 'OUI' && <div className="mt-2"><label className="block text-sm font-medium text-gray-700">Préciser</label><input type="text" name="activitePrecision" value={formData.activitePrecision} onChange={handleInputChange} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" placeholder="ex : 3x/semaine, marche..." /></div>}
+                      {field === 'regimeParticulier' && formData.regimeParticulier === 'OUI' && (
+                        <div className="mt-2">
+                          <label className="block text-sm font-medium text-gray-700">Préciser</label>
+                          <input
+                            type="text" name="regimePrecision" value={formData.regimePrecision}
+                            onChange={createCapitalizedChangeHandler('regimePrecision')}
+                            className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
+                            placeholder="ex : Sans sel, végétarien..."
+                          />
+                        </div>
+                      )}
+                      {field === 'activitePhysique' && formData.activitePhysique === 'OUI' && (
+                        <div className="mt-2">
+                          <label className="block text-sm font-medium text-gray-700">Préciser</label>
+                          <input
+                            type="text" name="activitePrecision" value={formData.activitePrecision}
+                            onChange={createCapitalizedChangeHandler('activitePrecision')}
+                            className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
+                            placeholder="ex : 3x/semaine, marche..."
+                          />
+                        </div>
+                      )}
                     </div>
                   );
                 })}
-                <div className="mt-3"><label className="block text-sm font-medium text-gray-700">Métier</label><input type="text" name="metier" value={formData.metier} onChange={handleInputChange} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" placeholder="ex : Enseignant, Commerçant..." /></div>
-                <div className="mt-3"><label className="block text-sm font-medium text-gray-700">NB (remarques générales)</label><textarea name="notes" value={formData.notes} onChange={handleInputChange} rows="3" className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" placeholder="Informations complémentaires..." /></div>
+                <div className="mt-3">
+                  <label className="block text-sm font-medium text-gray-700">Métier</label>
+                  <input
+                    type="text" name="metier" value={formData.metier}
+                    onChange={createCapitalizedChangeHandler('metier')}
+                    className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
+                    placeholder="ex : Enseignant, Commerçant..."
+                  />
+                </div>
+                <div className="mt-3">
+                  <label className="block text-sm font-medium text-gray-700">NB (remarques générales)</label>
+                  <textarea
+                    name="notes" value={formData.notes}
+                    onChange={createCapitalizedChangeHandler('notes')}
+                    rows="3"
+                    className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
+                    placeholder="Informations complémentaires..."
+                  />
+                </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div><label className="block text-sm font-medium text-gray-700">Prochain RDV</label><input type="date" name="dateRenouvellement" value={formData.dateRenouvellement} onChange={handleInputChange} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" /><p className="text-xs text-gray-400 mt-1">Un rappel apparaîtra 7 jours avant cette date</p></div>
+                <div><label className="block text-sm font-medium text-gray-700">Prochain RDV</label><input type="date" name="dateRenouvellement" value={formData.dateRenouvellement} onChange={handleRadioChange} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" /><p className="text-xs text-gray-400 mt-1">Un rappel apparaîtra 7 jours avant cette date</p></div>
                 <div><label className="block text-sm font-medium text-gray-700">Ordonnance (image)</label><div className="mt-1 flex items-center gap-4 flex-wrap"><label className="cursor-pointer flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg border border-gray-300 transition-colors"><PhotoIcon className="h-5 w-5" /> Choisir une image<input type="file" accept="image/*" onChange={handleFileChange} className="hidden" /></label>{formData.ordonnanceFile && <span className="text-sm text-gray-600">{formData.ordonnanceFile.name}</span>}{formData.ordonnanceUrl && !formData.ordonnanceFile && <a href={formData.ordonnanceUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-indigo-600 hover:underline">Voir l'image actuelle</a>}</div></div>
               </div>
               {isUploading && <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden"><motion.div initial={{ width: '10%' }} animate={{ width: '90%' }} transition={{ duration: 1.2 }} className="h-2.5 rounded-full" style={{ background: C.teal }} /></div>}
@@ -1231,7 +1481,6 @@ function AssistantPage() {
   const [detailPatient, setDetailPatient] = useState(null);
   const [visitPatient, setVisitPatient] = useState(null);
 
-  // Chargement des messages depuis localStorage
   const savedMessages = localStorage.getItem('vignon_chat_messages');
   const initialMessages = savedMessages
     ? JSON.parse(savedMessages)
@@ -1250,12 +1499,10 @@ function AssistantPage() {
   const chatContainerRef = useRef(null);
   const inputRef = useRef(null);
 
-  // Sauvegarde automatique des messages
   useEffect(() => {
     localStorage.setItem('vignon_chat_messages', JSON.stringify(messages));
   }, [messages]);
 
-  // Scroll en bas
   useEffect(() => {
     if (chatContainerRef.current) {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
@@ -1332,7 +1579,6 @@ function AssistantPage() {
     }
   };
 
-  // Nouvelle conversation : efface l'historique
   const handleNewConversation = () => {
     if (messages.length > 1 && !confirm('Voulez-vous vraiment effacer cette conversation ?')) return;
     const welcomeMessage = {
@@ -1347,12 +1593,10 @@ function AssistantPage() {
 
   return (
     <div className="p-4 md:p-6 h-full flex flex-col" style={{ maxHeight: 'calc(100vh - 80px)' }}>
-      {/* En-tête avec titre et bouton nouvelle conversation */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           <SparklesIcon className="h-6 w-6" style={{ color: C.amber }} />
           <h1 className={`font-display text-2xl ${dark ? 'text-white' : 'text-gray-800'}`}>Vignon</h1>
-          <span className="text-xs text-teal-500 bg-teal-50 px-2 py-0.5 rounded-full ml-2">IA médicale</span>
         </div>
         <button
           onClick={handleNewConversation}
@@ -1366,7 +1610,6 @@ function AssistantPage() {
         </button>
       </div>
 
-      {/* Messages */}
       <div
         ref={chatContainerRef}
         className={`flex-1 overflow-y-auto rounded-xl p-4 space-y-4 ${dark ? 'bg-[#0F2E29] border border-white/10' : 'bg-white border border-gray-200'}`}
@@ -1401,7 +1644,6 @@ function AssistantPage() {
         )}
       </div>
 
-      {/* Input */}
       <div className="mt-4 flex gap-2">
         <input
           ref={inputRef}

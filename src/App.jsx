@@ -1402,32 +1402,6 @@ function AssistantPage() {
           <PaperAirplaneIcon className="h-5 w-5" />
         </button>
       </div>
-
-      {/* Suggestions */}
-      <div className="flex flex-wrap gap-2 mt-3">
-        {[
-          'Afficher la fiche de Dupont',
-          'Rechercher un patient',
-          'Ajouter une consultation pour Martin',
-          'Interaction entre aspirine et warfarine',
-          'Posologie du paracétamol pour 20 kg',
-        ].map((suggestion) => (
-          <button
-            key={suggestion}
-            onClick={() => {
-              setInput(suggestion);
-              setTimeout(handleSend, 100);
-            }}
-            className={`text-xs px-3 py-1 rounded-full border ${
-              dark
-                ? 'border-white/20 text-white/60 hover:bg-white/10'
-                : 'border-gray-300 text-gray-600 hover:bg-gray-100'
-            }`}
-          >
-            {suggestion}
-          </button>
-        ))}
-      </div>
     </div>
   );
 }

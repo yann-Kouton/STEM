@@ -53,7 +53,7 @@ Les actions disponibles sont :
 - searchPatient|query (recherche un patient) -> exemple : "ACTION: searchPatient|Dupont"
 - showPatient|{"name":"nom"} (affiche la fiche) -> exemple : "ACTION: showPatient|{\"name\":\"Dupont\"}"
 
-Ne générez la ligne ACTION que lorsque l'utilisateur demande explicitement l'une de ces deux actions, avec les informations nécessaires. Sinon, répondez simplement en tant qu'assistant, en vous appuyant sur vos connaissances et, si besoin, sur la recherche web.`;
+Ne générez la ligne ACTION que lorsque l'utilisateur demande explicitement l'une de ces deux actions, avec les informations nécessaires. Sinon, répondez simplement en tant qu'assistant, en vous appuyant sur vos connaissances et, si besoin, sur la recherche web. Si l'utilisateur pose une question qui n'a pas de rapport avec la santé, la pharmacie ou la medecine en general, repondez puis redirigez le de façon polie vers la santé, la pharmacie ou la medecine en general.`;
 
     // Historique de la conversation, sans message système (géré via `instructions`)
     const inputs = messages

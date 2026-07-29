@@ -14,20 +14,17 @@ import {
   ClipboardDocumentListIcon, MoonIcon, SunIcon, CommandLineIcon, BellAlertIcon,
   ClockIcon, ChevronRightIcon, BeakerIcon, ScaleIcon,
   ShieldExclamationIcon, CheckCircleIcon, InformationCircleIcon, ExclamationTriangleIcon,
-  CalendarDaysIcon, Bars3Icon, SparklesIcon, ArrowPathIcon
+  CalendarDaysIcon, Bars3Icon, SparklesIcon, ArrowPathIcon,
+  PaperAirplaneIcon, ChevronDownIcon
 } from '@heroicons/react/24/outline';
-import { sendPasswordResetEmail, sendEmailVerification } from 'firebase/auth';
+import { sendPasswordResetEmail, sendEmailVerification, updateProfile } from 'firebase/auth';
 import { auth, db, storage } from './firebase/config';
 import {
   collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, query,
-  orderBy, serverTimestamp, where, arrayUnion
+  orderBy, serverTimestamp, where, arrayUnion, setDoc
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 
-/* ============================================================
-   PALETTE — identité "officine" : encre teal, papier ivoire,
-   ambre pour les alertes, argile pour le danger.
-   ============================================================ */
 const C = {
   ink: '#0B2B26',
   inkSoft: '#12433C',
@@ -61,9 +58,6 @@ function GlobalStyle() {
   );
 }
 
-/* ============================================================
-   STORES — Zustand : thème, palette de commandes, notifications
-   ============================================================ */
 const useUIStore = create((set) => ({
   dark: typeof window !== 'undefined' && localStorage.getItem('smm-theme') === 'dark',
   toggleDark: () => set((s) => {
@@ -90,13 +84,9 @@ const useToastStore = create((set) => ({
 
 const toastIcons = {
   success: CheckCircleIcon,
-  error: XCircleIconFallback,
+  error: ExclamationTriangleIcon,
   info: InformationCircleIcon,
 };
-// Petite icône de secours pour éviter une dépendance supplémentaire
-function XCircleIconFallback(props) {
-  return <ExclamationTriangleIcon {...props} />;
-}
 
 function ToastStack() {
   const { toasts, dismiss } = useToastStore();
@@ -129,10 +119,6 @@ function ToastStack() {
   );
 }
 
-/* ============================================================
-   DONNÉES MÉTIER — base locale de référence pharmaceutique
-   (outil d'aide à la décision, ne remplace pas le jugement clinique)
-   ============================================================ */
 const INTERACTIONS = [
   { a: 'Warfarine', b: 'Aspirine', niveau: 'majeure', detail: "Risque hémorragique fortement augmenté par effet antiagrégant additionné à l'anticoagulant." },
   { a: 'Warfarine', b: 'Paracétamol', niveau: 'moderee', detail: "Un usage prolongé à forte dose peut potentialiser l'effet anticoagulant : surveiller l'INR." },
@@ -154,9 +140,6 @@ const POSOLOGIES_PEDIATRIQUES = [
   { nom: 'Azithromycine', mgParKg: 10, maxParJour: 10, unite: 'mg/kg/j en 1 prise (J1), 5mg/kg J2-J5' },
 ];
 
-/* ============================================================
-   UTILITAIRES
-   ============================================================ */
 function toDate(v) {
   if (!v) return null;
   return v.toDate ? v.toDate() : new Date(v);
@@ -176,9 +159,6 @@ function normalizePhoneForWhatsApp(telephone) {
   return clean;
 }
 
-/* ============================================================
-   ROUTE PRIVÉE
-   ============================================================ */
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth();
   const dark = useUIStore((s) => s.dark);
@@ -195,12 +175,11 @@ function PrivateRoute({ children }) {
   return user ? children : <Navigate to="/login" replace />;
 }
 
-/* ============================================================
-   PAGE : Connexion / Inscription
-   ============================================================ */
 function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [nom, setNom] = useState('');
+  const [prenom, setPrenom] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [isRegister, setIsRegister] = useState(false);
@@ -216,8 +195,22 @@ function LoginPage() {
     try {
       if (isRegister) {
         const userCredential = await register(email, password);
-        await sendEmailVerification(userCredential.user);
+        const user = userCredential.user;
+        const displayName = `Dr. ${prenom} ${nom}`;
+        await updateProfile(user, { displayName });
+        await setDoc(doc(db, 'pharmaciens', user.uid), {
+          nom,
+          prenom,
+          email,
+          displayName,
+          createdAt: serverTimestamp()
+        });
+        await sendEmailVerification(user);
         setSuccess('Un email de vérification vous a été envoyé. Veuillez le confirmer avant de vous connecter.');
+        setNom('');
+        setPrenom('');
+        setEmail('');
+        setPassword('');
       } else {
         await login(email, password);
         navigate('/dashboard');
@@ -266,7 +259,6 @@ function LoginPage() {
     <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden" style={{ background: `radial-gradient(circle at 20% 20%, ${C.tealLight}22, transparent 45%), radial-gradient(circle at 80% 80%, ${C.amber}22, transparent 45%), ${C.paper}` }}>
       <GlobalStyle />
       <div className="absolute inset-0 label-perforation opacity-[0.04]" style={{ color: C.ink }} />
-
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
@@ -279,9 +271,8 @@ function LoginPage() {
               <BeakerIcon className="h-6 w-6 text-white" />
             </div>
             <h1 className="font-display text-2xl text-white tracking-tight">Pharmacie Sainte Marie Majeure</h1>
-            <p className="text-white/60 text-xs mt-1 font-mono uppercase tracking-widest">Plateforme officine</p>
+            <p className="text-white/60 text-xs mt-1 font-mono uppercase tracking-widest">Plateforme interne</p>
           </div>
-
           <div className="px-8 pb-8 pt-6">
             {success && (
               <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm rounded-lg flex items-start gap-2">
@@ -295,7 +286,6 @@ function LoginPage() {
                 <span>{error}</span>
               </div>
             )}
-
             {showReset ? (
               <form onSubmit={handleResetPassword} className="space-y-4">
                 <div>
@@ -319,6 +309,38 @@ function LoginPage() {
               </form>
             ) : (
               <form onSubmit={handleSubmit} className="space-y-4">
+                {isRegister && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Prénom</label>
+                      <div className="relative mt-1">
+                        <UserCircleIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                        <input
+                          type="text"
+                          value={prenom}
+                          onChange={(e) => setPrenom(e.target.value)}
+                          className="pl-10 w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 outline-none"
+                          placeholder="Vignon"
+                          required={isRegister}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Nom</label>
+                      <div className="relative mt-1">
+                        <UserCircleIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                        <input
+                          type="text"
+                          value={nom}
+                          onChange={(e) => setNom(e.target.value)}
+                          className="pl-10 w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 outline-none"
+                          placeholder="Kouton"
+                          required={isRegister}
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
                 <div>
                   <label className="block text-sm font-medium text-gray-700">Email</label>
                   <div className="relative mt-1">
@@ -326,7 +348,7 @@ function LoginPage() {
                     <input
                       type="email" value={email} onChange={(e) => setEmail(e.target.value)}
                       className="pl-10 w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 outline-none"
-                      placeholder="pharmacien@email.com" required
+                      placeholder="kouton.vignon@exemple.com" required
                     />
                   </div>
                 </div>
@@ -375,9 +397,6 @@ function LoginPage() {
   );
 }
 
-/* ============================================================
-   PALETTE DE COMMANDES (⌘K)
-   ============================================================ */
 function CommandPalette() {
   const { paletteOpen, setPaletteOpen, toggleDark } = useUIStore();
   const [q, setQ] = useState('');
@@ -390,7 +409,7 @@ function CommandPalette() {
     { label: 'Patients', icon: UsersIcon, run: () => navigate('/patients') },
     { label: 'Ajouter un patient', icon: UserPlusIcon, run: () => navigate('/patients?action=add') },
     { label: 'Rechercher un patient', icon: MagnifyingGlassIcon, run: () => navigate('/patients?focus=search') },
-    { label: 'Assistant IA (interactions, posologie)', icon: ChatBubbleLeftRightIcon, run: () => navigate('/assistant') },
+    { label: 'Assistant IA', icon: ChatBubbleLeftRightIcon, run: () => navigate('/assistant') },
     { label: 'Statistiques', icon: ChartBarIcon, run: () => navigate('/stats') },
     { label: 'Basculer le mode sombre', icon: MoonIcon, run: () => toggleDark() },
     { label: 'Déconnexion', icon: ArrowLeftOnRectangleIcon, run: () => logout() },
@@ -430,17 +449,17 @@ function CommandPalette() {
             style={{ background: C.card }}
           >
             <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100">
-              <CommandLineIcon className="h-5 w-5 text-gray-400" />
+              <MagnifyingGlassIcon className="h-5 w-5 text-gray-400" />
               <input
                 ref={inputRef} value={q} onChange={(e) => setQ(e.target.value)}
-                placeholder="Tapez une commande…"
+                placeholder="Rechercher une fonctionnalité..."
                 className="flex-1 outline-none text-sm font-body"
               />
               <kbd className="text-[10px] font-mono text-gray-400 border border-gray-200 rounded px-1.5 py-0.5">ESC</kbd>
             </div>
             <div className="max-h-80 overflow-y-auto scrollbar-thin py-2">
               {filtered.length === 0 && (
-                <p className="text-sm text-gray-400 px-4 py-6 text-center">Aucune commande trouvée</p>
+                <p className="text-sm text-gray-400 px-4 py-6 text-center">Aucune fonctionnalité trouvée</p>
               )}
               {filtered.map((a, i) => (
                 <button
@@ -461,12 +480,9 @@ function CommandPalette() {
   );
 }
 
-/* ============================================================
-   SIDEBAR
-   ============================================================ */
 function Sidebar() {
   const location = useLocation();
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const { dark, toggleDark, setPaletteOpen } = useUIStore();
 
   const navItems = [
@@ -484,7 +500,6 @@ function Sidebar() {
         </div>
         <span className="text-white font-display text-base leading-tight">Sainte Marie Majeure</span>
       </div>
-
       <nav className="flex-1 px-2 py-4 space-y-1">
         {navItems.map((item) => {
           const isActive = location.pathname === item.path;
@@ -500,16 +515,15 @@ function Sidebar() {
             </Link>
           );
         })}
-
         <button
           onClick={() => setPaletteOpen(true)}
           className="w-full flex items-center justify-between px-4 py-3 mt-3 text-xs font-mono text-white/40 border border-white/10 rounded-lg hover:border-white/30 hover:text-white/70 transition-colors"
         >
-          <span className="flex items-center gap-2"><CommandLineIcon className="h-4 w-4" /> Rechercher</span>
-          <kbd className="border border-white/15 rounded px-1.5 py-0.5">⌘K</kbd>
+          <span className="flex items-center gap-2">
+            <MagnifyingGlassIcon className="h-4 w-4" /> Rechercher
+          </span>
         </button>
       </nav>
-
       <div className="p-4 border-t border-white/10 space-y-1">
         <button onClick={toggleDark} className="flex items-center w-full px-4 py-2 text-sm font-medium text-white/60 hover:bg-white/10 rounded-lg transition-colors">
           {dark ? <SunIcon className="h-5 w-5 mr-3" /> : <MoonIcon className="h-5 w-5 mr-3" />}
@@ -519,15 +533,14 @@ function Sidebar() {
           <ArrowLeftOnRectangleIcon className="h-5 w-5 mr-3" />
           Déconnexion
         </button>
-        <p className="text-[10px] text-white/30 text-center mt-3 font-mono">v1.0 • PHCIE Sainte Marie Majeure</p>
+        {user?.displayName && (
+          <p className="text-xs text-white/40 text-center mt-2">{user.displayName}</p>
+        )}
       </div>
     </div>
   );
 }
 
-/* ============================================================
-   PAGE : Tableau de bord (sans inventaire)
-   ============================================================ */
 function StatCard({ title, value, icon: Icon, tone, dark, sub }) {
   return (
     <motion.div
@@ -600,6 +613,7 @@ function DashboardPage() {
   }, [stats.allVisites]);
 
   const pieColors = [C.teal, C.amber, C.sage, C.clay, C.tealLight];
+  const displayName = user?.displayName || user?.email || 'Utilisateur';
 
   if (loading) return <div className={`p-6 ${dark ? 'text-white/60' : 'text-gray-500'}`}>Chargement des statistiques…</div>;
 
@@ -608,7 +622,7 @@ function DashboardPage() {
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
         <div>
           <h1 className={`font-display text-2xl ${dark ? 'text-white' : 'text-gray-800'}`}>Tableau de bord</h1>
-          <p className={dark ? 'text-white/50' : 'text-gray-500'}>Bonjour, {user?.displayName || user?.email}</p>
+          <p className={dark ? 'text-white/50' : 'text-gray-500'}>Bonjour, {displayName}</p>
           {!isEmailVerified && user?.providerData?.[0]?.providerId === 'password' && (
             <div className="mt-2 flex items-center gap-2 text-sm text-amber-700 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200 w-fit">
               <XMarkIcon className="h-4 w-4" />
@@ -617,13 +631,11 @@ function DashboardPage() {
           )}
         </div>
       </div>
-
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-6">
         <StatCard title="Patients actifs" value={stats.totalPatients} icon={UsersIcon} tone={C.teal} dark={dark} />
         <StatCard title="Consultations totales" value={stats.totalConsultations} icon={ClipboardDocumentListIcon} tone={C.tealLight} dark={dark} />
         <StatCard title="Aujourd'hui" value={stats.consultationsJour} icon={CalendarDaysIcon} tone={C.sage} dark={dark} />
       </div>
-
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-6">
         <div className="lg:col-span-2 p-5 rounded-2xl" style={{ background: dark ? C.cardDark : C.card, border: `1px solid ${dark ? '#ffffff14' : '#00000010'}` }}>
           <p className={`text-sm font-medium mb-4 ${dark ? 'text-white' : 'text-gray-700'}`}>Consultations — 7 derniers jours</p>
@@ -643,7 +655,6 @@ function DashboardPage() {
             </AreaChart>
           </ResponsiveContainer>
         </div>
-
         <div className="p-5 rounded-2xl" style={{ background: dark ? C.cardDark : C.card, border: `1px solid ${dark ? '#ffffff14' : '#00000010'}` }}>
           <p className={`text-sm font-medium mb-4 ${dark ? 'text-white' : 'text-gray-700'}`}>Motifs fréquents</p>
           {topReasons.length === 0 ? (
@@ -660,14 +671,13 @@ function DashboardPage() {
           )}
         </div>
       </div>
-
       <div className="mt-4">
         <div className="p-5 rounded-2xl" style={{ background: dark ? C.cardDark : C.card, border: `1px solid ${dark ? '#ffffff14' : '#00000010'}` }}>
           <p className={`text-sm font-medium mb-3 flex items-center gap-2 ${dark ? 'text-white' : 'text-gray-700'}`}>
-            <CalendarDaysIcon className="h-4 w-4" style={{ color: C.amber }} /> Renouvellements à prévoir
+            <CalendarDaysIcon className="h-4 w-4" style={{ color: C.amber }} /> RDV à prévoir
           </p>
           {stats.renouvellements.length === 0 ? (
-            <p className={`text-sm ${dark ? 'text-white/40' : 'text-gray-400'}`}>Aucun renouvellement dans les 7 prochains jours</p>
+            <p className={`text-sm ${dark ? 'text-white/40' : 'text-gray-400'}`}>Aucun RDV dans les 7 prochains jours</p>
           ) : (
             <div className="space-y-2">
               {stats.renouvellements.slice(0, 5).map((p) => {
@@ -687,14 +697,8 @@ function DashboardPage() {
   );
 }
 
-/* ============================================================
-   PAGE : Gestion des Patients — version avec formulaire PDF + assurance + métier + appels/SMS
-   ============================================================ */
-
-// NOUVEAU COMPOSANT : affiche toutes les informations du patient (remplace TimelineDrawer)
 function PatientDetailDrawer({ patient, onClose, dark }) {
   const historique = [...(patient.historique || [])].sort((a, b) => toDate(b.date) - toDate(a.date));
-
   return (
     <motion.div
       initial={{ x: '100%' }}
@@ -704,7 +708,6 @@ function PatientDetailDrawer({ patient, onClose, dark }) {
       className="fixed right-0 top-0 h-screen w-full max-w-2xl z-50 shadow-2xl overflow-y-auto scrollbar-thin"
       style={{ background: dark ? C.cardDark : C.card }}
     >
-      {/* En-tête */}
       <div
         className="p-5 border-b sticky top-0 z-10 flex items-center justify-between"
         style={{ background: dark ? C.cardDark : C.card, borderColor: dark ? '#ffffff14' : '#00000010' }}
@@ -723,155 +726,48 @@ function PatientDetailDrawer({ patient, onClose, dark }) {
           <XMarkIcon className="h-6 w-6" />
         </button>
       </div>
-
       <div className="p-6 space-y-6">
-        {/* Section I : Administratif */}
         <div>
           <h4 className={`text-sm font-semibold uppercase tracking-wider ${dark ? 'text-white/40' : 'text-gray-500'} border-b pb-1`}>
             I. Données administratives
           </h4>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 mt-3 text-sm">
-            <div>
-              <dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Genre</dt>
-              <dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.genre || '—'}</dd>
-            </div>
-            <div>
-              <dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Date de naissance</dt>
-              <dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>
-                {patient.dateNaissance ? formatDate(patient.dateNaissance) : '—'}
-              </dd>
-            </div>
-            <div className="col-span-2">
-              <dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Adresse</dt>
-              <dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.adresse || '—'}</dd>
-            </div>
-            <div>
-              <dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Assurance</dt>
-              <dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.assurance || '—'}</dd>
-            </div>
-            <div>
-              <dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Contact 2</dt>
-              <dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.contact2 || '—'}</dd>
-            </div>
+            <div><dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Genre</dt><dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.genre || '—'}</dd></div>
+            <div><dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Date de naissance</dt><dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.dateNaissance ? formatDate(patient.dateNaissance) : '—'}</dd></div>
+            <div className="col-span-2"><dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Adresse</dt><dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.adresse || '—'}</dd></div>
+            <div><dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Assurance</dt><dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.assurance || '—'}</dd></div>
+            <div><dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Contact 2</dt><dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.contact2 || '—'}</dd></div>
           </dl>
         </div>
-
-        {/* Section II : Médical */}
         <div>
           <h4 className={`text-sm font-semibold uppercase tracking-wider ${dark ? 'text-white/40' : 'text-gray-500'} border-b pb-1`}>
             II. Données médicales
           </h4>
           <dl className="grid grid-cols-1 gap-y-2 mt-3 text-sm">
-            <div>
-              <dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Allergie médicamenteuse</dt>
-              <dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>
-                {patient.allergieMedicamenteuse === 'OUI' ? (
-                  <span className="text-red-600">OUI — {patient.allergiePrecision || 'non précisé'}</span>
-                ) : (
-                  'NON'
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Antécédent maladie</dt>
-              <dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>
-                {patient.antecedentMaladie === 'OUI' ? (
-                  <span className="text-amber-600">OUI — {patient.antecedentPrecision || 'non précisé'}</span>
-                ) : (
-                  'NON'
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Pathologie chronique</dt>
-              <dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.pathologieChronique || '—'}</dd>
-            </div>
-            <div>
-              <dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Traitement chronique</dt>
-              <dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>
-                {patient.traitementChronique && patient.traitementChronique.length > 0 ? (
-                  <ul className="list-disc list-inside space-y-0.5">
-                    {patient.traitementChronique.map((med, idx) => (
-                      <li key={idx}>{med}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  '—'
-                )}
-              </dd>
-            </div>
+            <div><dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Allergie médicamenteuse</dt><dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.allergieMedicamenteuse === 'OUI' ? <span className="text-red-600">OUI — {patient.allergiePrecision || 'non précisé'}</span> : 'NON'}</dd></div>
+            <div><dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Antécédent maladie</dt><dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.antecedentMaladie === 'OUI' ? <span className="text-amber-600">OUI — {patient.antecedentPrecision || 'non précisé'}</span> : 'NON'}</dd></div>
+            <div><dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Pathologie chronique</dt><dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.pathologieChronique || '—'}</dd></div>
+            <div><dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Traitement chronique</dt><dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.traitementChronique && patient.traitementChronique.length > 0 ? <ul className="list-disc list-inside space-y-0.5">{patient.traitementChronique.map((med, idx) => <li key={idx}>{med}</li>)}</ul> : '—'}</dd></div>
           </dl>
         </div>
-
-        {/* Section III : Mode de vie */}
         <div>
           <h4 className={`text-sm font-semibold uppercase tracking-wider ${dark ? 'text-white/40' : 'text-gray-500'} border-b pb-1`}>
             III. Mode de vie
           </h4>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 mt-3 text-sm">
-            <div>
-              <dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Tabagisme</dt>
-              <dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.tabagisme || 'NON'}</dd>
-            </div>
-            <div>
-              <dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Alcool</dt>
-              <dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.alcool || 'NON'}</dd>
-            </div>
-            <div>
-              <dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Café</dt>
-              <dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.cafe || 'NON'}</dd>
-            </div>
-            <div>
-              <dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Régime particulier</dt>
-              <dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>
-                {patient.regimeParticulier === 'OUI' ? patient.regimePrecision || 'OUI' : 'NON'}
-              </dd>
-            </div>
-            <div>
-              <dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Activité physique</dt>
-              <dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>
-                {patient.activitePhysique === 'OUI' ? patient.activitePrecision || 'OUI' : 'NON'}
-              </dd>
-            </div>
-            <div>
-              <dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Métier</dt>
-              <dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.metier || '—'}</dd>
-            </div>
-            <div className="col-span-2">
-              <dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Remarques</dt>
-              <dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.notes || '—'}</dd>
-            </div>
+            <div><dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Tabagisme</dt><dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.tabagisme || 'NON'}</dd></div>
+            <div><dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Alcool</dt><dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.alcool || 'NON'}</dd></div>
+            <div><dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Café</dt><dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.cafe || 'NON'}</dd></div>
+            <div><dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Régime particulier</dt><dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.regimeParticulier === 'OUI' ? patient.regimePrecision || 'OUI' : 'NON'}</dd></div>
+            <div><dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Activité physique</dt><dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.activitePhysique === 'OUI' ? patient.activitePrecision || 'OUI' : 'NON'}</dd></div>
+            <div><dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Métier</dt><dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.metier || '—'}</dd></div>
+            <div className="col-span-2"><dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Remarques</dt><dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.notes || '—'}</dd></div>
           </dl>
         </div>
-
-        {/* Prochain renouvellement et ordonnance */}
         <div className="grid grid-cols-2 gap-4">
-          <div>
-            <dt className={`text-sm ${dark ? 'text-white/40' : 'text-gray-500'}`}>Prochain renouvellement</dt>
-            <dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>
-              {patient.dateRenouvellement ? formatDate(patient.dateRenouvellement) : '—'}
-            </dd>
-          </div>
-          <div>
-            <dt className={`text-sm ${dark ? 'text-white/40' : 'text-gray-500'}`}>Ordonnance</dt>
-            <dd>
-              {patient.ordonnanceUrl ? (
-                <a
-                  href={patient.ordonnanceUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm text-teal-600 hover:underline flex items-center gap-1"
-                >
-                  <PhotoIcon className="h-4 w-4" /> Voir l'image
-                </a>
-              ) : (
-                <span className={`${dark ? 'text-white/40' : 'text-gray-400'}`}>Aucune</span>
-              )}
-            </dd>
-          </div>
+          <div><dt className={`text-sm ${dark ? 'text-white/40' : 'text-gray-500'}`}>Prochain RDV</dt><dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.dateRenouvellement ? formatDate(patient.dateRenouvellement) : '—'}</dd></div>
+          <div><dt className={`text-sm ${dark ? 'text-white/40' : 'text-gray-500'}`}>Ordonnance</dt><dd>{patient.ordonnanceUrl ? <a href={patient.ordonnanceUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-teal-600 hover:underline flex items-center gap-1"><PhotoIcon className="h-4 w-4" /> Voir l'image</a> : <span className={`${dark ? 'text-white/40' : 'text-gray-400'}`}>Aucune</span>}</dd></div>
         </div>
-
-        {/* Historique des consultations */}
         <div>
           <h4 className={`text-sm font-semibold uppercase tracking-wider ${dark ? 'text-white/40' : 'text-gray-500'} border-b pb-1`}>
             Historique des consultations ({historique.length})
@@ -914,17 +810,9 @@ function VisitModal({ patient, onClose, onSave }) {
           <h3 className="font-display text-lg text-gray-800">Nouvelle consultation — {patient.prenom} {patient.nom}</h3>
           <button type="button" onClick={onClose}><XMarkIcon className="h-5 w-5 text-gray-400" /></button>
         </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Motif</label>
-          <input value={objet} onChange={(e) => setObjet(e.target.value)} required className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" placeholder="Fièvre, renouvellement, conseil..." />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Notes</label>
-          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows="3" className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" />
-        </div>
-        <button disabled={saving} type="submit" className="w-full text-white font-semibold py-2.5 rounded-lg" style={{ background: C.teal }}>
-          {saving ? 'Enregistrement...' : 'Enregistrer la visite'}
-        </button>
+        <div><label className="block text-sm font-medium text-gray-700">Motif</label><input value={objet} onChange={(e) => setObjet(e.target.value)} required className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" placeholder="Fièvre, renouvellement, conseil..." /></div>
+        <div><label className="block text-sm font-medium text-gray-700">Notes</label><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows="3" className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" /></div>
+        <button disabled={saving} type="submit" className="w-full text-white font-semibold py-2.5 rounded-lg" style={{ background: C.teal }}>{saving ? 'Enregistrement...' : 'Enregistrer la visite'}</button>
       </motion.form>
     </div>
   );
@@ -942,38 +830,14 @@ function PatientsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPatient, setEditingPatient] = useState(null);
   const [visitPatient, setVisitPatient] = useState(null);
-  const [detailPatient, setDetailPatient] = useState(null); // remplace timelinePatient
+  const [detailPatient, setDetailPatient] = useState(null);
   const [formData, setFormData] = useState({
-    // Administratif
-    nom: '',
-    prenom: '',
-    genre: 'Homme',
-    dateNaissance: '',
-    adresse: '',
-    assurance: '',
-    contact1: '',
-    contact2: '',
-    // Médical
-    allergieMedicamenteuse: 'NON',
-    allergiePrecision: '',
-    antecedentMaladie: 'NON',
-    antecedentPrecision: '',
-    pathologieChronique: '',
-    traitementChronique: [''],
-    // Mode de vie
-    tabagisme: 'NON',
-    alcool: 'NON',
-    cafe: 'NON',
-    regimeParticulier: 'NON',
-    regimePrecision: '',
-    activitePhysique: 'NON',
-    activitePrecision: '',
-    metier: '',
-    // Anciens champs (conservés)
-    dateRenouvellement: '',
-    ordonnanceUrl: '',
-    ordonnanceFile: null,
-    notes: ''
+    nom: '', prenom: '', genre: 'Homme', dateNaissance: '', adresse: '', assurance: '', contact1: '', contact2: '',
+    allergieMedicamenteuse: 'NON', allergiePrecision: '', antecedentMaladie: 'NON', antecedentPrecision: '',
+    pathologieChronique: '', traitementChronique: [''],
+    tabagisme: 'NON', alcool: 'NON', cafe: 'NON', regimeParticulier: 'NON', regimePrecision: '',
+    activitePhysique: 'NON', activitePrecision: '', metier: '',
+    dateRenouvellement: '', ordonnanceUrl: '', ordonnanceFile: null, notes: ''
   });
   const [isUploading, setIsUploading] = useState(false);
   const searchInputRef = useRef(null);
@@ -991,7 +855,6 @@ function PatientsPage() {
   useEffect(() => {
     if (searchParams.get('action') === 'add') { openAddModal(); setSearchParams({}); }
     if (searchParams.get('focus') === 'search') { searchInputRef.current?.focus(); setSearchParams({}); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
   const filteredPatients = patients.filter((p) =>
@@ -1001,39 +864,17 @@ function PatientsPage() {
   );
 
   const handleInputChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
-  const handleRadioChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-  };
+  const handleRadioChange = (e) => { setFormData({ ...formData, [e.target.name]: e.target.value }); };
   const handleFileChange = (e) => { const file = e.target.files[0]; if (file) setFormData({ ...formData, ordonnanceFile: file }); };
 
   const resetForm = () => {
     setFormData({
-      nom: '',
-      prenom: '',
-      genre: 'Homme',
-      dateNaissance: '',
-      adresse: '',
-      assurance: '',
-      contact1: '',
-      contact2: '',
-      allergieMedicamenteuse: 'NON',
-      allergiePrecision: '',
-      antecedentMaladie: 'NON',
-      antecedentPrecision: '',
-      pathologieChronique: '',
-      traitementChronique: [''],
-      tabagisme: 'NON',
-      alcool: 'NON',
-      cafe: 'NON',
-      regimeParticulier: 'NON',
-      regimePrecision: '',
-      activitePhysique: 'NON',
-      activitePrecision: '',
-      metier: '',
-      dateRenouvellement: '',
-      ordonnanceUrl: '',
-      ordonnanceFile: null,
-      notes: ''
+      nom: '', prenom: '', genre: 'Homme', dateNaissance: '', adresse: '', assurance: '', contact1: '', contact2: '',
+      allergieMedicamenteuse: 'NON', allergiePrecision: '', antecedentMaladie: 'NON', antecedentPrecision: '',
+      pathologieChronique: '', traitementChronique: [''],
+      tabagisme: 'NON', alcool: 'NON', cafe: 'NON', regimeParticulier: 'NON', regimePrecision: '',
+      activitePhysique: 'NON', activitePrecision: '', metier: '',
+      dateRenouvellement: '', ordonnanceUrl: '', ordonnanceFile: null, notes: ''
     });
     setEditingPatient(null);
     setIsModalOpen(false);
@@ -1044,32 +885,22 @@ function PatientsPage() {
   const openEditModal = (patient) => {
     setEditingPatient(patient);
     setFormData({
-      nom: patient.nom || '',
-      prenom: patient.prenom || '',
-      genre: patient.genre || 'Homme',
+      nom: patient.nom || '', prenom: patient.prenom || '', genre: patient.genre || 'Homme',
       dateNaissance: patient.dateNaissance ? toDate(patient.dateNaissance).toISOString().slice(0, 10) : '',
-      adresse: patient.adresse || '',
-      assurance: patient.assurance || '',
-      contact1: patient.contact1 || patient.telephone || '',
-      contact2: patient.contact2 || '',
+      adresse: patient.adresse || '', assurance: patient.assurance || '',
+      contact1: patient.contact1 || patient.telephone || '', contact2: patient.contact2 || '',
       allergieMedicamenteuse: patient.allergieMedicamenteuse || 'NON',
       allergiePrecision: patient.allergiePrecision || '',
       antecedentMaladie: patient.antecedentMaladie || 'NON',
       antecedentPrecision: patient.antecedentPrecision || '',
       pathologieChronique: patient.pathologieChronique || '',
       traitementChronique: patient.traitementChronique && patient.traitementChronique.length > 0 ? patient.traitementChronique : [''],
-      tabagisme: patient.tabagisme || 'NON',
-      alcool: patient.alcool || 'NON',
-      cafe: patient.cafe || 'NON',
-      regimeParticulier: patient.regimeParticulier || 'NON',
-      regimePrecision: patient.regimePrecision || '',
-      activitePhysique: patient.activitePhysique || 'NON',
-      activitePrecision: patient.activitePrecision || '',
+      tabagisme: patient.tabagisme || 'NON', alcool: patient.alcool || 'NON', cafe: patient.cafe || 'NON',
+      regimeParticulier: patient.regimeParticulier || 'NON', regimePrecision: patient.regimePrecision || '',
+      activitePhysique: patient.activitePhysique || 'NON', activitePrecision: patient.activitePrecision || '',
       metier: patient.metier || '',
       dateRenouvellement: patient.dateRenouvellement ? toDate(patient.dateRenouvellement).toISOString().slice(0, 10) : '',
-      ordonnanceUrl: patient.ordonnanceUrl || '',
-      ordonnanceFile: null,
-      notes: patient.notes || ''
+      ordonnanceUrl: patient.ordonnanceUrl || '', ordonnanceFile: null, notes: patient.notes || ''
     });
     setIsModalOpen(true);
   };
@@ -1093,37 +924,23 @@ function PatientsPage() {
         ordonnanceUrl = await uploadOrdonnance(formData.ordonnanceFile, editingPatient ? editingPatient.id : 'temp');
       }
       const patientData = {
-        // Administratif
-        nom: formData.nom,
-        prenom: formData.prenom,
-        genre: formData.genre,
+        nom: formData.nom, prenom: formData.prenom, genre: formData.genre,
         dateNaissance: formData.dateNaissance ? new Date(formData.dateNaissance).toISOString() : null,
-        adresse: formData.adresse,
-        assurance: formData.assurance,
-        contact1: formData.contact1,
-        contact2: formData.contact2,
-        // Médical
+        adresse: formData.adresse, assurance: formData.assurance,
+        contact1: formData.contact1, contact2: formData.contact2,
         allergieMedicamenteuse: formData.allergieMedicamenteuse,
         allergiePrecision: formData.allergiePrecision,
         antecedentMaladie: formData.antecedentMaladie,
         antecedentPrecision: formData.antecedentPrecision,
         pathologieChronique: formData.pathologieChronique,
         traitementChronique: formData.traitementChronique.filter(m => m.trim() !== ''),
-        // Mode de vie
-        tabagisme: formData.tabagisme,
-        alcool: formData.alcool,
-        cafe: formData.cafe,
-        regimeParticulier: formData.regimeParticulier,
-        regimePrecision: formData.regimePrecision,
-        activitePhysique: formData.activitePhysique,
-        activitePrecision: formData.activitePrecision,
+        tabagisme: formData.tabagisme, alcool: formData.alcool, cafe: formData.cafe,
+        regimeParticulier: formData.regimeParticulier, regimePrecision: formData.regimePrecision,
+        activitePhysique: formData.activitePhysique, activitePrecision: formData.activitePrecision,
         metier: formData.metier,
-        // Anciens champs
         dateRenouvellement: formData.dateRenouvellement ? new Date(formData.dateRenouvellement).toISOString() : null,
-        ordonnanceUrl: ordonnanceUrl || '',
-        notes: formData.notes,
-        pharmacienId: user.uid,
-        updatedAt: serverTimestamp()
+        ordonnanceUrl: ordonnanceUrl || '', notes: formData.notes,
+        pharmacienId: user.uid, updatedAt: serverTimestamp()
       };
       if (editingPatient) {
         await updateDoc(doc(db, 'patients', editingPatient.id), patientData);
@@ -1166,18 +983,8 @@ function PatientsPage() {
     }
   };
 
-  // Gestionnaires d'appel et SMS
-  const handleCall = (telephone) => {
-    if (!telephone) return;
-    window.location.href = `tel:${telephone}`;
-  };
-
-  const handleSms = (telephone, prenom) => {
-    if (!telephone) return;
-    const msg = encodeURIComponent(`Bonjour ${prenom}, la Pharmacie Sainte Marie Majeure vous contacte.`);
-    window.location.href = `sms:${telephone}?body=${msg}`;
-  };
-
+  const handleCall = (telephone) => { if (!telephone) return; window.location.href = `tel:${telephone}`; };
+  const handleSms = (telephone, prenom) => { if (!telephone) return; const msg = encodeURIComponent(`Bonjour ${prenom}, la Pharmacie Sainte Marie Majeure vous contacte.`); window.location.href = `sms:${telephone}?body=${msg}`; };
   const sendReminder = (patient) => {
     const num = normalizePhoneForWhatsApp(patient.contact1 || patient.telephone || '');
     if (!num) return;
@@ -1185,34 +992,18 @@ function PatientsPage() {
     window.open(`https://wa.me/${num}?text=${msg}`, '_blank');
   };
 
-  const openWhatsApp = (telephone) => {
-    if (!telephone) return;
-    window.open(`https://wa.me/${normalizePhoneForWhatsApp(telephone)}`, '_blank');
-  };
-
   if (loading) return <div className={`p-6 ${dark ? 'text-white/60' : 'text-gray-500'}`}>Chargement des patients...</div>;
 
   return (
     <div className="p-4 md:p-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-        <div>
-          <h1 className={`font-display text-2xl ${dark ? 'text-white' : 'text-gray-800'}`}>Gestion des patients</h1>
-          <p className={`text-sm ${dark ? 'text-white/50' : 'text-gray-500'}`}>{filteredPatients.length} patient(s)</p>
-        </div>
-        <button onClick={openAddModal} className="flex items-center gap-2 text-white px-4 py-2 rounded-lg transition-transform hover:scale-[1.02]" style={{ background: C.teal }}>
-          <UserPlusIcon className="h-5 w-5" /> Ajouter un patient
-        </button>
+        <div><h1 className={`font-display text-2xl ${dark ? 'text-white' : 'text-gray-800'}`}>Gestion des patients</h1><p className={`text-sm ${dark ? 'text-white/50' : 'text-gray-500'}`}>{filteredPatients.length} patient(s)</p></div>
+        <button onClick={openAddModal} className="flex items-center gap-2 text-white px-4 py-2 rounded-lg transition-transform hover:scale-[1.02]" style={{ background: C.teal }}><UserPlusIcon className="h-5 w-5" /> Ajouter un patient</button>
       </div>
-
       <div className="relative mb-4">
         <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-        <input
-          ref={searchInputRef} type="text" placeholder="Rechercher par nom, prénom ou téléphone..."
-          value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
-          className={`w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 outline-none ${dark ? 'bg-[#0F2E29] border-white/10 text-white placeholder:text-white/30' : 'border-gray-300 bg-white'}`}
-        />
+        <input ref={searchInputRef} type="text" placeholder="Rechercher par nom, prénom ou téléphone..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className={`w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 outline-none ${dark ? 'bg-[#0F2E29] border-white/10 text-white placeholder:text-white/30' : 'border-gray-300 bg-white'}`} />
       </div>
-
       {filteredPatients.length === 0 ? (
         <div className="text-center py-12 rounded-xl border" style={{ background: dark ? C.cardDark : C.card, borderColor: dark ? '#ffffff14' : '#00000010' }}>
           <UserCircleIcon className="h-12 w-12 text-gray-300 mx-auto mb-3" />
@@ -1230,60 +1021,26 @@ function PatientsPage() {
                 <div className="flex items-start justify-between">
                   <button onClick={() => setDetailPatient(patient)} className="flex-1 text-left">
                     <h3 className={`font-semibold ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.prenom} {patient.nom}</h3>
-                    {contact && (
-                      <span className="text-sm text-green-600 flex items-center gap-1 mt-1">
-                        <PhoneIcon className="h-4 w-4" /> {contact}
-                      </span>
-                    )}
-                    {patient.allergieMedicamenteuse === 'OUI' && patient.allergiePrecision && (
-                      <p className="text-xs text-red-600 mt-1">Allergie : {patient.allergiePrecision}</p>
-                    )}
-                    {patient.pathologieChronique && (
-                      <p className="text-xs text-amber-600 mt-1">Pathologie : {patient.pathologieChronique}</p>
-                    )}
-                    {patient.metier && (
-                      <p className="text-xs text-gray-600 mt-1">Métier : {patient.metier}</p>
-                    )}
-                    <p className={`text-xs mt-1 flex items-center gap-1 ${dark ? 'text-white/40' : 'text-gray-400'}`}>
-                      <ClockIcon className="h-3.5 w-3.5" /> {(patient.historique || []).length} consultation(s) — voir détail
-                    </p>
+                    {contact && <span className="text-sm text-green-600 flex items-center gap-1 mt-1"><PhoneIcon className="h-4 w-4" /> {contact}</span>}
+                    {patient.allergieMedicamenteuse === 'OUI' && patient.allergiePrecision && <p className="text-xs text-red-600 mt-1">Allergie : {patient.allergiePrecision}</p>}
+                    {patient.pathologieChronique && <p className="text-xs text-amber-600 mt-1">Pathologie : {patient.pathologieChronique}</p>}
+                    {patient.metier && <p className="text-xs text-gray-600 mt-1">Métier : {patient.metier}</p>}
+                    <p className={`text-xs mt-1 flex items-center gap-1 ${dark ? 'text-white/40' : 'text-gray-400'}`}><ClockIcon className="h-3.5 w-3.5" /> {(patient.historique || []).length} consultation(s) — voir détail</p>
                   </button>
                   <div className="flex gap-1 flex-shrink-0">
                     <button onClick={() => openEditModal(patient)} className="p-1.5 text-gray-400 hover:text-indigo-600 rounded-lg hover:bg-indigo-50 transition-colors" title="Modifier"><PencilSquareIcon className="h-5 w-5" /></button>
                     <button onClick={() => handleDelete(patient.id)} className="p-1.5 text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors" title="Supprimer"><TrashIcon className="h-5 w-5" /></button>
                   </div>
                 </div>
-
-                {patient.ordonnanceUrl && (
-                  <a href={patient.ordonnanceUrl} target="_blank" rel="noopener noreferrer" className="text-sm hover:underline flex items-center gap-1 mt-2" style={{ color: C.teal }}>
-                    <PhotoIcon className="h-4 w-4" /> Voir ordonnance
-                  </a>
-                )}
-
-                {renouvJours !== null && (
-                  <div className={`mt-2 text-xs px-2 py-1 rounded-lg inline-flex items-center gap-1 ${renouvUrgent ? 'bg-amber-50 text-amber-700' : (dark ? 'text-white/40' : 'text-gray-400')}`}>
-                    <CalendarDaysIcon className="h-3.5 w-3.5" />
-                    {renouvJours < 0 ? `Renouvellement en retard de ${Math.abs(renouvJours)}j` : `Renouvellement dans ${renouvJours}j`}
-                  </div>
-                )}
-
+                {patient.ordonnanceUrl && <a href={patient.ordonnanceUrl} target="_blank" rel="noopener noreferrer" className="text-sm hover:underline flex items-center gap-1 mt-2" style={{ color: C.teal }}><PhotoIcon className="h-4 w-4" /> Voir ordonnance</a>}
+                {renouvJours !== null && <div className={`mt-2 text-xs px-2 py-1 rounded-lg inline-flex items-center gap-1 ${renouvUrgent ? 'bg-amber-50 text-amber-700' : (dark ? 'text-white/40' : 'text-gray-400')}`}><CalendarDaysIcon className="h-3.5 w-3.5" />{renouvJours < 0 ? `RDV en retard de ${Math.abs(renouvJours)}j` : `RDV dans ${renouvJours}j`}</div>}
                 <div className="flex flex-wrap gap-1 mt-3">
-                  <button onClick={() => setVisitPatient(patient)} className="flex-1 text-xs font-medium py-1.5 rounded-lg border transition-colors" style={{ borderColor: C.teal + '55', color: C.teal }}>
-                    + Consultation
-                  </button>
+                  <button onClick={() => setVisitPatient(patient)} className="flex-1 text-xs font-medium py-1.5 rounded-lg border transition-colors" style={{ borderColor: C.teal + '55', color: C.teal }}>+ Consultation</button>
                   {contact && (
                     <>
-                      <button onClick={() => handleCall(contact)} className="flex-1 text-xs font-medium py-1.5 rounded-lg bg-green-50 text-green-700 hover:bg-green-100 transition-colors flex items-center justify-center gap-1">
-                        <PhoneIcon className="h-3 w-3" /> Appeler
-                      </button>
-                      <button onClick={() => handleSms(contact, patient.prenom)} className="flex-1 text-xs font-medium py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors flex items-center justify-center gap-1">
-                        <ChatBubbleLeftRightIcon className="h-3 w-3" /> SMS
-                      </button>
-                      {renouvUrgent && (
-                        <button onClick={() => sendReminder(patient)} className="flex-1 text-xs font-medium py-1.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors flex items-center justify-center gap-1">
-                          <ChatBubbleLeftRightIcon className="h-3 w-3" /> WhatsApp
-                        </button>
-                      )}
+                      <button onClick={() => handleCall(contact)} className="flex-1 text-xs font-medium py-1.5 rounded-lg bg-green-50 text-green-700 hover:bg-green-100 transition-colors flex items-center justify-center gap-1"><PhoneIcon className="h-3 w-3" /> Appeler</button>
+                      <button onClick={() => handleSms(contact, patient.prenom)} className="flex-1 text-xs font-medium py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors flex items-center justify-center gap-1"><ChatBubbleLeftRightIcon className="h-3 w-3" /> SMS</button>
+                      {renouvUrgent && <button onClick={() => sendReminder(patient)} className="flex-1 text-xs font-medium py-1.5 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors flex items-center justify-center gap-1"><ChatBubbleLeftRightIcon className="h-3 w-3" /> WhatsApp</button>}
                     </>
                   )}
                 </div>
@@ -1292,416 +1049,68 @@ function PatientsPage() {
           })}
         </div>
       )}
-
       <AnimatePresence>
-        {detailPatient && (
-          <PatientDetailDrawer
-            patient={patients.find(p => p.id === detailPatient.id) || detailPatient}
-            onClose={() => setDetailPatient(null)}
-            dark={dark}
-          />
-        )}
+        {detailPatient && <PatientDetailDrawer patient={patients.find(p => p.id === detailPatient.id) || detailPatient} onClose={() => setDetailPatient(null)} dark={dark} />}
       </AnimatePresence>
-      {detailPatient && (
-        <div className="fixed inset-0 bg-black/30 z-40" onClick={() => setDetailPatient(null)} />
-      )}
-
+      {detailPatient && <div className="fixed inset-0 bg-black/30 z-40" onClick={() => setDetailPatient(null)} />}
       {visitPatient && <VisitModal patient={visitPatient} onClose={() => setVisitPatient(null)} onSave={saveVisit} />}
-
-      {/* Modal formulaire complet */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto p-6">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="font-display text-xl text-gray-800">
-                {editingPatient ? 'Modifier le patient' : 'Ajouter un patient'}
-              </h2>
-              <button onClick={resetForm} className="text-gray-400 hover:text-gray-600">
-                <XMarkIcon className="h-6 w-6" />
-              </button>
+              <h2 className="font-display text-xl text-gray-800">{editingPatient ? 'Modifier le patient' : 'Ajouter un patient'}</h2>
+              <button onClick={resetForm} className="text-gray-400 hover:text-gray-600"><XMarkIcon className="h-6 w-6" /></button>
             </div>
-
             <form onSubmit={handleSubmit} className="space-y-6">
-              {/* I. Données administratives */}
               <div className="border-b border-gray-200 pb-4">
                 <h3 className="font-display text-lg text-gray-800 mb-3">I. Données administratives</h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Nom *</label>
-                    <input
-                      type="text"
-                      name="nom"
-                      value={formData.nom}
-                      onChange={handleInputChange}
-                      className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Prénom(s) *</label>
-                    <input
-                      type="text"
-                      name="prenom"
-                      value={formData.prenom}
-                      onChange={handleInputChange}
-                      className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
-                      required
-                    />
-                  </div>
+                  <div><label className="block text-sm font-medium text-gray-700">Nom *</label><input type="text" name="nom" value={formData.nom} onChange={handleInputChange} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" required /></div>
+                  <div><label className="block text-sm font-medium text-gray-700">Prénom(s) *</label><input type="text" name="prenom" value={formData.prenom} onChange={handleInputChange} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" required /></div>
                 </div>
-                <div className="mt-3">
-                  <label className="block text-sm font-medium text-gray-700">Genre</label>
-                  <div className="flex gap-4 mt-1">
-                    <label className="flex items-center gap-1">
-                      <input
-                        type="radio"
-                        name="genre"
-                        value="Homme"
-                        checked={formData.genre === 'Homme'}
-                        onChange={handleRadioChange}
-                      /> Homme
-                    </label>
-                    <label className="flex items-center gap-1">
-                      <input
-                        type="radio"
-                        name="genre"
-                        value="Femme"
-                        checked={formData.genre === 'Femme'}
-                        onChange={handleRadioChange}
-                      /> Femme
-                    </label>
-                  </div>
-                </div>
-                <div className="mt-3">
-                  <label className="block text-sm font-medium text-gray-700">Date de naissance</label>
-                  <input
-                    type="date"
-                    name="dateNaissance"
-                    value={formData.dateNaissance}
-                    onChange={handleInputChange}
-                    className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
-                  />
-                </div>
-                <div className="mt-3">
-                  <label className="block text-sm font-medium text-gray-700">Adresse</label>
-                  <input
-                    type="text"
-                    name="adresse"
-                    value={formData.adresse}
-                    onChange={handleInputChange}
-                    className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
-                  />
-                </div>
-                <div className="mt-3">
-                  <label className="block text-sm font-medium text-gray-700">Assurance</label>
-                  <input
-                    type="text"
-                    name="assurance"
-                    value={formData.assurance}
-                    onChange={handleInputChange}
-                    className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
-                    placeholder="ex : Mutuelle, CNPS..."
-                  />
-                </div>
+                <div className="mt-3"><label className="block text-sm font-medium text-gray-700">Genre</label><div className="flex gap-4 mt-1"><label className="flex items-center gap-1"><input type="radio" name="genre" value="Homme" checked={formData.genre === 'Homme'} onChange={handleRadioChange} /> Homme</label><label className="flex items-center gap-1"><input type="radio" name="genre" value="Femme" checked={formData.genre === 'Femme'} onChange={handleRadioChange} /> Femme</label></div></div>
+                <div className="mt-3"><label className="block text-sm font-medium text-gray-700">Date de naissance</label><input type="date" name="dateNaissance" value={formData.dateNaissance} onChange={handleInputChange} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" /></div>
+                <div className="mt-3"><label className="block text-sm font-medium text-gray-700">Adresse</label><input type="text" name="adresse" value={formData.adresse} onChange={handleInputChange} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" /></div>
+                <div className="mt-3"><label className="block text-sm font-medium text-gray-700">Assurance</label><input type="text" name="assurance" value={formData.assurance} onChange={handleInputChange} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" placeholder="ex : Mutuelle, CNPS..." /></div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-3">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Contact 1 *</label>
-                    <input
-                      type="tel"
-                      name="contact1"
-                      value={formData.contact1}
-                      onChange={handleInputChange}
-                      className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">Contact 2</label>
-                    <input
-                      type="tel"
-                      name="contact2"
-                      value={formData.contact2}
-                      onChange={handleInputChange}
-                      className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
-                    />
-                  </div>
+                  <div><label className="block text-sm font-medium text-gray-700">Contact 1 *</label><input type="tel" name="contact1" value={formData.contact1} onChange={handleInputChange} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" required /></div>
+                  <div><label className="block text-sm font-medium text-gray-700">Contact 2</label><input type="tel" name="contact2" value={formData.contact2} onChange={handleInputChange} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" /></div>
                 </div>
               </div>
-
-              {/* II. Données médicales */}
               <div className="border-b border-gray-200 pb-4">
                 <h3 className="font-display text-lg text-gray-800 mb-3">II. Données médicales</h3>
-                {/* Allergie médicamenteuse */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Allergie médicamenteuse</label>
-                  <div className="flex gap-4 mt-1">
-                    <label className="flex items-center gap-1">
-                      <input
-                        type="radio"
-                        name="allergieMedicamenteuse"
-                        value="OUI"
-                        checked={formData.allergieMedicamenteuse === 'OUI'}
-                        onChange={handleRadioChange}
-                      /> OUI
-                    </label>
-                    <label className="flex items-center gap-1">
-                      <input
-                        type="radio"
-                        name="allergieMedicamenteuse"
-                        value="NON"
-                        checked={formData.allergieMedicamenteuse === 'NON'}
-                        onChange={handleRadioChange}
-                      /> NON
-                    </label>
-                  </div>
-                  {formData.allergieMedicamenteuse === 'OUI' && (
-                    <div className="mt-2">
-                      <label className="block text-sm font-medium text-gray-700">À préciser</label>
-                      <input
-                        type="text"
-                        name="allergiePrecision"
-                        value={formData.allergiePrecision}
-                        onChange={handleInputChange}
-                        className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
-                        placeholder="ex : Pénicilline"
-                      />
-                    </div>
-                  )}
-                </div>
-                {/* Antécédent maladie */}
-                <div className="mt-3">
-                  <label className="block text-sm font-medium text-gray-700">Antécédent maladie</label>
-                  <div className="flex gap-4 mt-1">
-                    <label className="flex items-center gap-1">
-                      <input
-                        type="radio"
-                        name="antecedentMaladie"
-                        value="OUI"
-                        checked={formData.antecedentMaladie === 'OUI'}
-                        onChange={handleRadioChange}
-                      /> OUI
-                    </label>
-                    <label className="flex items-center gap-1">
-                      <input
-                        type="radio"
-                        name="antecedentMaladie"
-                        value="NON"
-                        checked={formData.antecedentMaladie === 'NON'}
-                        onChange={handleRadioChange}
-                      /> NON
-                    </label>
-                  </div>
-                  {formData.antecedentMaladie === 'OUI' && (
-                    <div className="mt-2">
-                      <label className="block text-sm font-medium text-gray-700">À préciser</label>
-                      <input
-                        type="text"
-                        name="antecedentPrecision"
-                        value={formData.antecedentPrecision}
-                        onChange={handleInputChange}
-                        className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
-                        placeholder="ex : Diabète, HTA..."
-                      />
-                    </div>
-                  )}
-                </div>
-                {/* Pathologie chronique */}
-                <div className="mt-3">
-                  <label className="block text-sm font-medium text-gray-700">Pathologie chronique</label>
-                  <input
-                    type="text"
-                    name="pathologieChronique"
-                    value={formData.pathologieChronique}
-                    onChange={handleInputChange}
-                    className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
-                    placeholder="ex : Diabète, HTA..."
-                  />
-                </div>
-                {/* Traitement chronique */}
-                <div className="mt-3">
-                  <label className="block text-sm font-medium text-gray-700">Traitement chronique</label>
-                  <div className="space-y-2 mt-1">
-                    {formData.traitementChronique.map((med, index) => (
-                      <div key={index} className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          value={med}
-                          onChange={(e) => {
-                            const newList = [...formData.traitementChronique];
-                            newList[index] = e.target.value;
-                            setFormData({ ...formData, traitementChronique: newList });
-                          }}
-                          placeholder={`Médicament ${index + 1}`}
-                          className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const newList = formData.traitementChronique.filter((_, i) => i !== index);
-                            setFormData({ ...formData, traitementChronique: newList.length ? newList : [''] });
-                          }}
-                          className="text-red-500 hover:text-red-700 p-1"
-                        >
-                          <XMarkIcon className="h-5 w-5" />
-                        </button>
-                      </div>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={() => setFormData({ ...formData, traitementChronique: [...formData.traitementChronique, ''] })}
-                      className="text-sm text-teal-600 hover:underline"
-                    >
-                      + Ajouter un médicament
-                    </button>
-                  </div>
-                </div>
+                <div><label className="block text-sm font-medium text-gray-700">Allergie médicamenteuse</label><div className="flex gap-4 mt-1"><label className="flex items-center gap-1"><input type="radio" name="allergieMedicamenteuse" value="OUI" checked={formData.allergieMedicamenteuse === 'OUI'} onChange={handleRadioChange} /> OUI</label><label className="flex items-center gap-1"><input type="radio" name="allergieMedicamenteuse" value="NON" checked={formData.allergieMedicamenteuse === 'NON'} onChange={handleRadioChange} /> NON</label></div>{formData.allergieMedicamenteuse === 'OUI' && <div className="mt-2"><label className="block text-sm font-medium text-gray-700">À préciser</label><input type="text" name="allergiePrecision" value={formData.allergiePrecision} onChange={handleInputChange} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" placeholder="ex : Pénicilline" /></div>}</div>
+                <div className="mt-3"><label className="block text-sm font-medium text-gray-700">Antécédent maladie</label><div className="flex gap-4 mt-1"><label className="flex items-center gap-1"><input type="radio" name="antecedentMaladie" value="OUI" checked={formData.antecedentMaladie === 'OUI'} onChange={handleRadioChange} /> OUI</label><label className="flex items-center gap-1"><input type="radio" name="antecedentMaladie" value="NON" checked={formData.antecedentMaladie === 'NON'} onChange={handleRadioChange} /> NON</label></div>{formData.antecedentMaladie === 'OUI' && <div className="mt-2"><label className="block text-sm font-medium text-gray-700">À préciser</label><input type="text" name="antecedentPrecision" value={formData.antecedentPrecision} onChange={handleInputChange} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" placeholder="ex : Diabète, HTA..." /></div>}</div>
+                <div className="mt-3"><label className="block text-sm font-medium text-gray-700">Pathologie chronique</label><input type="text" name="pathologieChronique" value={formData.pathologieChronique} onChange={handleInputChange} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" placeholder="ex : Diabète, HTA..." /></div>
+                <div className="mt-3"><label className="block text-sm font-medium text-gray-700">Traitement chronique</label><div className="space-y-2 mt-1">{formData.traitementChronique.map((med, index) => (<div key={index} className="flex items-center gap-2"><input type="text" value={med} onChange={(e) => { const newList = [...formData.traitementChronique]; newList[index] = e.target.value; setFormData({ ...formData, traitementChronique: newList }); }} placeholder={`Médicament ${index + 1}`} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" /><button type="button" onClick={() => { const newList = formData.traitementChronique.filter((_, i) => i !== index); setFormData({ ...formData, traitementChronique: newList.length ? newList : [''] }); }} className="text-red-500 hover:text-red-700 p-1"><XMarkIcon className="h-5 w-5" /></button></div>))}<button type="button" onClick={() => setFormData({ ...formData, traitementChronique: [...formData.traitementChronique, ''] })} className="text-sm text-teal-600 hover:underline">+ Ajouter un médicament</button></div></div>
               </div>
-
-              {/* III. Mode de vie */}
               <div className="border-b border-gray-200 pb-4">
                 <h3 className="font-display text-lg text-gray-800 mb-3">III. Mode de vie</h3>
                 {['tabagisme', 'alcool', 'cafe', 'regimeParticulier', 'activitePhysique'].map((field) => {
-                  const label = field === 'regimeParticulier' ? 'Régime particulier' :
-                                field === 'activitePhysique' ? 'Activité physique' :
-                                field.charAt(0).toUpperCase() + field.slice(1);
+                  const label = field === 'regimeParticulier' ? 'Régime particulier' : field === 'activitePhysique' ? 'Activité physique' : field.charAt(0).toUpperCase() + field.slice(1);
                   return (
                     <div key={field} className="mt-3">
                       <label className="block text-sm font-medium text-gray-700">{label}</label>
                       <div className="flex gap-4 mt-1">
-                        <label className="flex items-center gap-1">
-                          <input
-                            type="radio"
-                            name={field}
-                            value="OUI"
-                            checked={formData[field] === 'OUI'}
-                            onChange={handleRadioChange}
-                          /> OUI
-                        </label>
-                        <label className="flex items-center gap-1">
-                          <input
-                            type="radio"
-                            name={field}
-                            value="NON"
-                            checked={formData[field] === 'NON'}
-                            onChange={handleRadioChange}
-                          /> NON
-                        </label>
+                        <label className="flex items-center gap-1"><input type="radio" name={field} value="OUI" checked={formData[field] === 'OUI'} onChange={handleRadioChange} /> OUI</label>
+                        <label className="flex items-center gap-1"><input type="radio" name={field} value="NON" checked={formData[field] === 'NON'} onChange={handleRadioChange} /> NON</label>
                       </div>
-                      {field === 'regimeParticulier' && formData.regimeParticulier === 'OUI' && (
-                        <div className="mt-2">
-                          <label className="block text-sm font-medium text-gray-700">Préciser</label>
-                          <input
-                            type="text"
-                            name="regimePrecision"
-                            value={formData.regimePrecision}
-                            onChange={handleInputChange}
-                            className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
-                            placeholder="ex : Sans sel, végétarien..."
-                          />
-                        </div>
-                      )}
-                      {field === 'activitePhysique' && formData.activitePhysique === 'OUI' && (
-                        <div className="mt-2">
-                          <label className="block text-sm font-medium text-gray-700">Préciser</label>
-                          <input
-                            type="text"
-                            name="activitePrecision"
-                            value={formData.activitePrecision}
-                            onChange={handleInputChange}
-                            className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
-                            placeholder="ex : 3x/semaine, marche..."
-                          />
-                        </div>
-                      )}
+                      {field === 'regimeParticulier' && formData.regimeParticulier === 'OUI' && <div className="mt-2"><label className="block text-sm font-medium text-gray-700">Préciser</label><input type="text" name="regimePrecision" value={formData.regimePrecision} onChange={handleInputChange} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" placeholder="ex : Sans sel, végétarien..." /></div>}
+                      {field === 'activitePhysique' && formData.activitePhysique === 'OUI' && <div className="mt-2"><label className="block text-sm font-medium text-gray-700">Préciser</label><input type="text" name="activitePrecision" value={formData.activitePrecision} onChange={handleInputChange} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" placeholder="ex : 3x/semaine, marche..." /></div>}
                     </div>
                   );
                 })}
-                <div className="mt-3">
-                  <label className="block text-sm font-medium text-gray-700">Métier</label>
-                  <input
-                    type="text"
-                    name="metier"
-                    value={formData.metier}
-                    onChange={handleInputChange}
-                    className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
-                    placeholder="ex : Enseignant, Commerçant..."
-                  />
-                </div>
-                <div className="mt-3">
-                  <label className="block text-sm font-medium text-gray-700">NB (remarques générales)</label>
-                  <textarea
-                    name="notes"
-                    value={formData.notes}
-                    onChange={handleInputChange}
-                    rows="3"
-                    className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
-                    placeholder="Informations complémentaires..."
-                  />
-                </div>
+                <div className="mt-3"><label className="block text-sm font-medium text-gray-700">Métier</label><input type="text" name="metier" value={formData.metier} onChange={handleInputChange} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" placeholder="ex : Enseignant, Commerçant..." /></div>
+                <div className="mt-3"><label className="block text-sm font-medium text-gray-700">NB (remarques générales)</label><textarea name="notes" value={formData.notes} onChange={handleInputChange} rows="3" className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" placeholder="Informations complémentaires..." /></div>
               </div>
-
-              {/* Champs supplémentaires (renouvellement et ordonnance) */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Prochain renouvellement</label>
-                  <input
-                    type="date"
-                    name="dateRenouvellement"
-                    value={formData.dateRenouvellement}
-                    onChange={handleInputChange}
-                    className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
-                  />
-                  <p className="text-xs text-gray-400 mt-1">Un rappel apparaîtra 7 jours avant cette date</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Ordonnance (image)</label>
-                  <div className="mt-1 flex items-center gap-4 flex-wrap">
-                    <label className="cursor-pointer flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg border border-gray-300 transition-colors">
-                      <PhotoIcon className="h-5 w-5" /> Choisir une image
-                      <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
-                    </label>
-                    {formData.ordonnanceFile && <span className="text-sm text-gray-600">{formData.ordonnanceFile.name}</span>}
-                    {formData.ordonnanceUrl && !formData.ordonnanceFile && (
-                      <a href={formData.ordonnanceUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-indigo-600 hover:underline">
-                        Voir l'image actuelle
-                      </a>
-                    )}
-                  </div>
-                </div>
+                <div><label className="block text-sm font-medium text-gray-700">Prochain RDV</label><input type="date" name="dateRenouvellement" value={formData.dateRenouvellement} onChange={handleInputChange} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" /><p className="text-xs text-gray-400 mt-1">Un rappel apparaîtra 7 jours avant cette date</p></div>
+                <div><label className="block text-sm font-medium text-gray-700">Ordonnance (image)</label><div className="mt-1 flex items-center gap-4 flex-wrap"><label className="cursor-pointer flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg border border-gray-300 transition-colors"><PhotoIcon className="h-5 w-5" /> Choisir une image<input type="file" accept="image/*" onChange={handleFileChange} className="hidden" /></label>{formData.ordonnanceFile && <span className="text-sm text-gray-600">{formData.ordonnanceFile.name}</span>}{formData.ordonnanceUrl && !formData.ordonnanceFile && <a href={formData.ordonnanceUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-indigo-600 hover:underline">Voir l'image actuelle</a>}</div></div>
               </div>
-
-              {/* Barre de progression upload */}
-              {isUploading && (
-                <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
-                  <motion.div
-                    initial={{ width: '10%' }}
-                    animate={{ width: '90%' }}
-                    transition={{ duration: 1.2 }}
-                    className="h-2.5 rounded-full"
-                    style={{ background: C.teal }}
-                  />
-                </div>
-              )}
-
-              {/* Boutons */}
+              {isUploading && <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden"><motion.div initial={{ width: '10%' }} animate={{ width: '90%' }} transition={{ duration: 1.2 }} className="h-2.5 rounded-full" style={{ background: C.teal }} /></div>}
               <div className="flex gap-3 pt-2">
-                <button
-                  type="submit"
-                  disabled={isUploading}
-                  className={`flex-1 text-white font-semibold py-2.5 rounded-lg transition-colors ${
-                    isUploading ? 'opacity-50 cursor-not-allowed' : ''
-                  }`}
-                  style={{ background: C.teal }}
-                >
-                  {isUploading ? 'Envoi...' : editingPatient ? 'Mettre à jour' : 'Ajouter'}
-                </button>
-                <button
-                  type="button"
-                  onClick={resetForm}
-                  className="flex-1 border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium py-2.5 rounded-lg transition-colors"
-                >
-                  Annuler
-                </button>
+                <button type="submit" disabled={isUploading} className={`flex-1 text-white font-semibold py-2.5 rounded-lg transition-colors ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`} style={{ background: C.teal }}>{isUploading ? 'Envoi...' : editingPatient ? 'Mettre à jour' : 'Ajouter'}</button>
+                <button type="button" onClick={resetForm} className="flex-1 border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium py-2.5 rounded-lg transition-colors">Annuler</button>
               </div>
             </form>
           </div>
@@ -1711,123 +1120,318 @@ function PatientsPage() {
   );
 }
 
-/* ============================================================
-   PAGE : Assistant IA — aide à la décision pharmaceutique
-   ============================================================ */
+function executeAction(action, params, context) {
+  const { push, navigate, patients, setDetailPatient, setVisitPatient } = context;
+
+  switch (action) {
+    case 'searchPatient':
+      if (params.query && params.query.trim() !== '') {
+        navigate('/patients?focus=search');
+        return `🔍 Recherche lancée pour "${params.query}"`;
+      } else {
+        return '🔍 Veuillez me donner le nom du patient que vous souhaitez rechercher.';
+      }
+
+    case 'showPatient':
+      if (params.patientId) {
+        const patient = patients.find(p => p.id === params.patientId);
+        if (patient) {
+          setDetailPatient(patient);
+          return `📋 Voici la fiche de ${patient.prenom} ${patient.nom}`;
+        }
+        return `❌ Patient non trouvé avec l'ID ${params.patientId}`;
+      }
+      if (params.name) {
+        const found = patients.filter(p =>
+          p.nom.toLowerCase().includes(params.name.toLowerCase()) ||
+          p.prenom.toLowerCase().includes(params.name.toLowerCase())
+        );
+        if (found.length === 1) {
+          setDetailPatient(found[0]);
+          return `📋 Voici la fiche de ${found[0].prenom} ${found[0].nom}`;
+        } else if (found.length > 1) {
+          return `🔍 Plusieurs patients correspondent : ${found.map(p => p.prenom + ' ' + p.nom).join(', ')}`;
+        }
+        return `❌ Aucun patient trouvé pour "${params.name}"`;
+      }
+      return '❌ Veuillez préciser un patient (nom ou ID)';
+
+    case 'addConsultation':
+      if (params.patientId) {
+        const patient = patients.find(p => p.id === params.patientId);
+        if (patient) {
+          setVisitPatient(patient);
+          return `🩺 Consultation en cours pour ${patient.prenom} ${patient.nom}`;
+        }
+        return `❌ Patient non trouvé`;
+      }
+      return '❌ Veuillez préciser le patient';
+
+    case 'listPatients':
+      return `👥 ${patients.length} patient(s) actif(s) dans votre base.`;
+
+    case 'checkInteraction':
+      const { moleculeA, moleculeB } = params;
+      if (!moleculeA || !moleculeB) return '❌ Veuillez fournir deux molécules.';
+      const inter = INTERACTIONS.find(i =>
+        (i.a === moleculeA && i.b === moleculeB) ||
+        (i.a === moleculeB && i.b === moleculeA)
+      );
+      if (inter) {
+        return `⚠️ Interaction ${inter.niveau} entre ${moleculeA} et ${moleculeB} : ${inter.detail}`;
+      }
+      return `✅ Aucune interaction connue entre ${moleculeA} et ${moleculeB}.`;
+
+    case 'calculateDosage':
+      const { molecule, weight } = params;
+      if (!molecule || !weight) return '❌ Veuillez fournir une molécule et un poids.';
+      const poso = POSOLOGIES_PEDIATRIQUES.find(p => p.nom.toLowerCase() === molecule.toLowerCase());
+      if (!poso) return `❌ Molécule "${molecule}" non reconnue.`;
+      const dose = weight * poso.mgParKg;
+      const maxDose = Math.min(dose, weight * poso.maxParJour);
+      return `💊 ${molecule} : ${dose.toFixed(1)} mg par prise (max ${maxDose.toFixed(0)} mg/jour) – ${poso.unite}`;
+
+    default:
+      return `❌ Action "${action}" non reconnue.`;
+  }
+}
+
 function AssistantPage() {
   const { dark } = useUIStore();
-  const [tab, setTab] = useState('interactions');
-  const [molA, setMolA] = useState('');
-  const [molB, setMolB] = useState('');
-  const [molecule, setMolecule] = useState(POSOLOGIES_PEDIATRIQUES[0].nom);
-  const [poids, setPoids] = useState('');
+  const { push } = useToastStore();
+  const navigate = useNavigate();
 
-  const result = useMemo(() => {
-    if (!molA || !molB || molA === molB) return null;
-    return INTERACTIONS.find((i) => (i.a === molA && i.b === molB) || (i.a === molB && i.b === molA)) || 'none';
-  }, [molA, molB]);
+  const [patients, setPatients] = useState([]);
+  const [detailPatient, setDetailPatient] = useState(null);
+  const [visitPatient, setVisitPatient] = useState(null);
 
-  const posologie = POSOLOGIES_PEDIATRIQUES.find((p) => p.nom === molecule);
-  const doseCalculee = poids && posologie ? (Number(poids) * posologie.mgParKg) : null;
-  const doseMax = poids && posologie ? Math.min(doseCalculee, Number(poids) * posologie.maxParJour) : null;
+  // Chargement des messages depuis localStorage
+  const savedMessages = localStorage.getItem('vignon_chat_messages');
+  const initialMessages = savedMessages
+    ? JSON.parse(savedMessages)
+    : [
+        {
+          role: 'assistant',
+          content:
+            'Bonjour, je suis Vignon, votre assistant médical. Je peux rechercher des patients, afficher leurs fiches, ajouter des consultations, vérifier des interactions, calculer des posologies... Que puis-je faire pour vous ?',
+        },
+      ];
 
-  const niveauStyle = { majeure: { bg: 'bg-red-50', text: 'text-red-700', border: 'border-red-200' }, moderee: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' }, mineure: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200' } };
+  const [messages, setMessages] = useState(initialMessages);
+  const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  const chatContainerRef = useRef(null);
+  const inputRef = useRef(null);
+
+  // Sauvegarde automatique des messages
+  useEffect(() => {
+    localStorage.setItem('vignon_chat_messages', JSON.stringify(messages));
+  }, [messages]);
+
+  // Scroll en bas
+  useEffect(() => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  }, [messages]);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  const MODEL = 'mistral-medium';
+  const isDev = import.meta.env.DEV;
+
+  const sendToAssistant = async (messages) => {
+    const apiUrl = isDev
+      ? 'http://localhost:3000/api/assistant'
+      : '/api/assistant';
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages, model: MODEL }),
+    });
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(error);
+    }
+    return response.json();
+  };
+
+  const handleSend = async () => {
+    if (!input.trim() || isLoading) return;
+    const userMsg = input.trim();
+    setInput('');
+    setMessages((prev) => [...prev, { role: 'user', content: userMsg }]);
+    setIsLoading(true);
+
+    try {
+      const response = await sendToAssistant([
+        ...messages,
+        { role: 'user', content: userMsg },
+      ]);
+      let assistantContent = response.content;
+      let action = response.action;
+
+      if (action) {
+        const context = {
+          push,
+          navigate,
+          patients,
+          setPatients,
+          setDetailPatient,
+          setVisitPatient,
+        };
+        const actionResult = executeAction(action.type, action.params, context);
+        assistantContent += `\n\n${actionResult}`;
+      }
+
+      setMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: assistantContent },
+      ]);
+    } catch (error) {
+      console.error('Erreur assistant:', error);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'assistant',
+          content: '❌ Désolé, une erreur est survenue. Veuillez réessayer.',
+        },
+      ]);
+      push('Erreur de communication avec l\'assistant', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Nouvelle conversation : efface l'historique
+  const handleNewConversation = () => {
+    if (messages.length > 1 && !confirm('Voulez-vous vraiment effacer cette conversation ?')) return;
+    const welcomeMessage = {
+      role: 'assistant',
+      content:
+        'Bonjour, je suis Vignon, votre assistant médical. Je peux rechercher des patients, afficher leurs fiches, ajouter des consultations, vérifier des interactions, calculer des posologies... Que puis-je faire pour vous ?',
+    };
+    setMessages([welcomeMessage]);
+    localStorage.setItem('vignon_chat_messages', JSON.stringify([welcomeMessage]));
+    setInput('');
+  };
 
   return (
-    <div className="p-4 md:p-6">
-      <div className="flex items-center gap-3 mb-1">
-        <SparklesIcon className="h-6 w-6" style={{ color: C.amber }} />
-        <h1 className={`font-display text-2xl ${dark ? 'text-white' : 'text-gray-800'}`}>Assistant du pharmacien</h1>
-      </div>
-      <p className={`text-sm mb-6 ${dark ? 'text-white/50' : 'text-gray-500'}`}>Outil d'aide à la décision — ne remplace jamais le jugement clinique du pharmacien.</p>
-
-      <div className="flex gap-2 mb-6">
-        <button onClick={() => setTab('interactions')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${tab === 'interactions' ? 'text-white' : (dark ? 'text-white/50' : 'text-gray-500')}`} style={tab === 'interactions' ? { background: C.teal } : {}}>
-          <ShieldExclamationIcon className="h-4 w-4 inline mr-1.5 -mt-0.5" /> Interactions médicamenteuses
+    <div className="p-4 md:p-6 h-full flex flex-col" style={{ maxHeight: 'calc(100vh - 80px)' }}>
+      {/* En-tête avec titre et bouton nouvelle conversation */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <SparklesIcon className="h-6 w-6" style={{ color: C.amber }} />
+          <h1 className={`font-display text-2xl ${dark ? 'text-white' : 'text-gray-800'}`}>Vignon</h1>
+          <span className="text-xs text-teal-500 bg-teal-50 px-2 py-0.5 rounded-full ml-2">IA médicale</span>
+        </div>
+        <button
+          onClick={handleNewConversation}
+          className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+            dark
+              ? 'border-white/20 text-white/70 hover:bg-white/10'
+              : 'border-gray-300 text-gray-600 hover:bg-gray-100'
+          }`}
+        >
+          Nouvelle conversation
         </button>
-        <button onClick={() => setTab('posologie')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${tab === 'posologie' ? 'text-white' : (dark ? 'text-white/50' : 'text-gray-500')}`} style={tab === 'posologie' ? { background: C.teal } : {}}>
-          <ScaleIcon className="h-4 w-4 inline mr-1.5 -mt-0.5" /> Posologie pédiatrique
-        </button>
       </div>
 
-      {tab === 'interactions' && (
-        <div className="max-w-2xl">
-          <div className="p-6 rounded-2xl" style={{ background: dark ? C.cardDark : C.card, border: `1px solid ${dark ? '#ffffff14' : '#00000010'}` }}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className={`block text-sm font-medium mb-1 ${dark ? 'text-white/70' : 'text-gray-700'}`}>Molécule A</label>
-                <select value={molA} onChange={(e) => setMolA(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none">
-                  <option value="">Sélectionner...</option>
-                  {MOLECULES.map((m) => <option key={m} value={m}>{m}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className={`block text-sm font-medium mb-1 ${dark ? 'text-white/70' : 'text-gray-700'}`}>Molécule B</label>
-                <select value={molB} onChange={(e) => setMolB(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none">
-                  <option value="">Sélectionner...</option>
-                  {MOLECULES.map((m) => <option key={m} value={m}>{m}</option>)}
-                </select>
-              </div>
-            </div>
-
-            <div className="mt-5">
-              {!molA || !molB ? (
-                <p className={`text-sm ${dark ? 'text-white/40' : 'text-gray-400'}`}>Sélectionnez deux molécules pour vérifier une interaction connue.</p>
-              ) : molA === molB ? (
-                <p className={`text-sm ${dark ? 'text-white/40' : 'text-gray-400'}`}>Choisissez deux molécules différentes.</p>
-              ) : result === 'none' ? (
-                <div className="p-4 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm flex items-start gap-2">
-                  <CheckCircleIcon className="h-5 w-5 flex-shrink-0 mt-0.5" />
-                  Aucune interaction majeure connue dans notre base de référence entre ces deux molécules.
-                </div>
-              ) : result ? (
-                <div className={`p-4 rounded-lg border text-sm flex items-start gap-2 ${niveauStyle[result.niveau].bg} ${niveauStyle[result.niveau].border} ${niveauStyle[result.niveau].text}`}>
-                  <ExclamationTriangleIcon className="h-5 w-5 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-semibold uppercase text-xs tracking-wide mb-1">Interaction {result.niveau === 'majeure' ? 'majeure' : result.niveau === 'moderee' ? 'modérée' : 'mineure'}</p>
-                    <p>{result.detail}</p>
-                  </div>
-                </div>
-              ) : null}
+      {/* Messages */}
+      <div
+        ref={chatContainerRef}
+        className={`flex-1 overflow-y-auto rounded-xl p-4 space-y-4 ${dark ? 'bg-[#0F2E29] border border-white/10' : 'bg-white border border-gray-200'}`}
+        style={{ minHeight: '300px' }}
+      >
+        {messages.map((msg, idx) => (
+          <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div
+              className={`max-w-3/4 px-4 py-2 rounded-2xl ${
+                msg.role === 'user'
+                  ? dark
+                    ? 'bg-teal-700 text-white'
+                    : 'bg-teal-500 text-white'
+                  : dark
+                  ? 'bg-gray-700 text-gray-200'
+                  : 'bg-gray-100 text-gray-800'
+              }`}
+            >
+              <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
             </div>
           </div>
-          <p className={`text-xs mt-3 ${dark ? 'text-white/30' : 'text-gray-400'}`}>Base de référence locale à 10 associations courantes, à titre indicatif. Une intégration à une base pharmacologique complète nécessiterait un service backend dédié.</p>
-        </div>
-      )}
-
-      {tab === 'posologie' && (
-        <div className="max-w-2xl">
-          <div className="p-6 rounded-2xl" style={{ background: dark ? C.cardDark : C.card, border: `1px solid ${dark ? '#ffffff14' : '#00000010'}` }}>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className={`block text-sm font-medium mb-1 ${dark ? 'text-white/70' : 'text-gray-700'}`}>Molécule</label>
-                <select value={molecule} onChange={(e) => setMolecule(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none">
-                  {POSOLOGIES_PEDIATRIQUES.map((p) => <option key={p.nom} value={p.nom}>{p.nom}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className={`block text-sm font-medium mb-1 ${dark ? 'text-white/70' : 'text-gray-700'}`}>Poids de l'enfant (kg)</label>
-                <input type="number" min="0" value={poids} onChange={(e) => setPoids(e.target.value)} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" placeholder="ex : 18" />
+        ))}
+        {isLoading && (
+          <div className="flex justify-start">
+            <div className={`px-4 py-2 rounded-2xl ${dark ? 'bg-gray-700' : 'bg-gray-100'}`}>
+              <div className="flex items-center gap-2">
+                <ArrowPathIcon className="h-4 w-4 animate-spin text-teal-500" />
+                <span className="text-sm text-gray-500">Vignon réfléchit...</span>
               </div>
             </div>
-            {poids && (
-              <div className="mt-5 p-4 rounded-lg" style={{ background: dark ? '#ffffff08' : '#00000006' }}>
-                <p className={`text-xs font-mono uppercase ${dark ? 'text-white/40' : 'text-gray-400'}`}>{posologie.unite}</p>
-                <p className={`font-display text-3xl mt-1 ${dark ? 'text-white' : 'text-gray-800'}`}>{doseCalculee?.toFixed(1)} mg <span className="text-sm font-body font-normal opacity-50">par prise</span></p>
-                <p className={`text-sm mt-1 ${dark ? 'text-white/50' : 'text-gray-500'}`}>Dose maximale conseillée : environ {doseMax?.toFixed(0)} mg/jour</p>
-              </div>
-            )}
           </div>
-          <p className={`text-xs mt-3 ${dark ? 'text-white/30' : 'text-gray-400'}`}>Calcul indicatif basé sur des posologies usuelles. À valider systématiquement selon l'âge, la forme galénique disponible et les recommandations en vigueur.</p>
-        </div>
-      )}
+        )}
+      </div>
+
+      {/* Input */}
+      <div className="mt-4 flex gap-2">
+        <input
+          ref={inputRef}
+          type="text"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+          placeholder="Posez une question ou donnez une instruction..."
+          className={`flex-1 px-4 py-2 rounded-lg border focus:ring-2 outline-none ${
+            dark
+              ? 'bg-[#0F2E29] border-white/10 text-white placeholder:text-white/30'
+              : 'bg-white border-gray-300'
+          }`}
+          disabled={isLoading}
+        />
+        <button
+          onClick={handleSend}
+          disabled={isLoading || !input.trim()}
+          className={`px-4 py-2 rounded-lg text-white font-medium transition-colors ${
+            isLoading || !input.trim() ? 'opacity-50 cursor-not-allowed' : 'hover:bg-opacity-80'
+          }`}
+          style={{ background: C.teal }}
+        >
+          <PaperAirplaneIcon className="h-5 w-5" />
+        </button>
+      </div>
+
+      {/* Suggestions */}
+      <div className="flex flex-wrap gap-2 mt-3">
+        {[
+          'Afficher la fiche de Dupont',
+          'Rechercher un patient',
+          'Ajouter une consultation pour Martin',
+          'Interaction entre aspirine et warfarine',
+          'Posologie du paracétamol pour 20 kg',
+        ].map((suggestion) => (
+          <button
+            key={suggestion}
+            onClick={() => {
+              setInput(suggestion);
+              setTimeout(handleSend, 100);
+            }}
+            className={`text-xs px-3 py-1 rounded-full border ${
+              dark
+                ? 'border-white/20 text-white/60 hover:bg-white/10'
+                : 'border-gray-300 text-gray-600 hover:bg-gray-100'
+            }`}
+          >
+            {suggestion}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
 
-/* ============================================================
-   PAGE : Statistiques
-   ============================================================ */
 function StatsPage() {
   const { user } = useAuth();
   const { dark } = useUIStore();
@@ -1865,13 +1469,11 @@ function StatsPage() {
   return (
     <div className="p-4 md:p-6">
       <h1 className={`font-display text-2xl mb-6 ${dark ? 'text-white' : 'text-gray-800'}`}>Statistiques</h1>
-
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <StatCard title="Total patients" value={patients.length} icon={UsersIcon} tone={C.teal} dark={dark} />
         <StatCard title="Consultations cumulées" value={totalConsultations} icon={ClipboardDocumentListIcon} tone={C.amber} dark={dark} />
         <StatCard title="Moyenne / patient" value={moyenneParPatient} icon={ArrowPathIcon} tone={C.sage} dark={dark} />
       </div>
-
       <div className="p-5 rounded-2xl" style={{ background: dark ? C.cardDark : C.card, border: `1px solid ${dark ? '#ffffff14' : '#00000010'}` }}>
         <p className={`text-sm font-medium mb-4 ${dark ? 'text-white' : 'text-gray-700'}`}>Nouveaux patients — 6 derniers mois</p>
         <ResponsiveContainer width="100%" height={260}>
@@ -1888,9 +1490,6 @@ function StatsPage() {
   );
 }
 
-/* ============================================================
-   LAYOUT + ROUTES
-   ============================================================ */
 function LayoutWithSidebar({ children }) {
   const { dark, paletteOpen, setPaletteOpen } = useUIStore();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -1899,9 +1498,7 @@ function LayoutWithSidebar({ children }) {
       <GlobalStyle />
       <ToastStack />
       <CommandPalette />
-      <div className="hidden md:block">
-        <Sidebar />
-      </div>
+      <div className="hidden md:block"><Sidebar /></div>
       <AnimatePresence>
         {mobileOpen && (
           <motion.div initial={{ x: '-100%' }} animate={{ x: 0 }} exit={{ x: '-100%' }} className="fixed inset-0 z-50 md:hidden">

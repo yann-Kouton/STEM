@@ -13,7 +13,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { messages, model, userName } = req.body;
+    const { messages, model, displayName } = req.body;
     if (!messages) {
       return res.status(400).json({ error: 'Messages requis' });
     }
@@ -32,7 +32,7 @@ export default async function handler(req, res) {
     // On le nettoie sommairement pour éviter d'injecter du texte indésirable
     // dans les instructions système.
     const safeUserName =
-      typeof userName === 'string' ? userName.trim().slice(0, 60).replace(/[\r\n]+/g, ' ') : '';
+      typeof displayName === 'string' ? displayName.trim().slice(0, 60).replace(/[\r\n]+/g, ' ') : '';
 
     const personalization = safeUserName
       ? `\n\nL'utilisateur actuellement connecté s'appelle ${safeUserName} (pharmacien de l'officine). Adressez-vous à lui par son prénom de façon naturelle (par exemple en le saluant ou ponctuellement dans vos réponses), sans le répéter systématiquement à chaque message pour ne pas être lourd.`

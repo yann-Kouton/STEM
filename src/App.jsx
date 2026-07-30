@@ -5,8 +5,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
-  AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, PieChart, Pie, Cell
+  AreaChart, Area, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, PieChart, Pie, Cell, Legend
 } from 'recharts';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import {
@@ -747,7 +747,7 @@ function DashboardPage() {
   );
 }
 
-function PatientDetailDrawer({ patient, onClose, dark }) {
+function PatientDetailDrawer({ patient, onClose, dark, onEditConstante, onDeleteConstante }) {
   const historique = [...(patient.historique || [])].sort((a, b) => toDate(b.date) - toDate(a.date));
   const age = calculAge(patient.dateNaissance);
 
@@ -837,8 +837,11 @@ function PatientDetailDrawer({ patient, onClose, dark }) {
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div><dt className={`text-sm ${dark ? 'text-white/40' : 'text-gray-500'}`}>Prochain RDV</dt><dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.dateRenouvellement ? formatDate(patient.dateRenouvellement) : '—'}</dd></div>
-          <div><dt className={`text-sm ${dark ? 'text-white/40' : 'text-gray-500'}`}>Ordonnance</dt><dd>{patient.ordonnanceUrl ? <a href={patient.ordonnanceUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-teal-600 hover:underline flex items-center gap-1"><PhotoIcon className="h-4 w-4" /> Voir l'image</a> : <span className={`${dark ? 'text-white/40' : 'text-gray-400'}`}>Aucune</span>}</dd></div>
+          {patient.ordonnanceUrl && (
+            <div><dt className={`text-sm ${dark ? 'text-white/40' : 'text-gray-500'}`}>Ordonnance (fiche)</dt><dd><a href={patient.ordonnanceUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-teal-600 hover:underline flex items-center gap-1"><PhotoIcon className="h-4 w-4" /> Voir l'image</a></dd></div>
+          )}
         </div>
+        <PatientVitalsSection patient={patient} dark={dark} onEditConstante={onEditConstante} onDeleteConstante={onDeleteConstante} />
         <div>
           <h4 className={`text-sm font-semibold uppercase tracking-wider ${dark ? 'text-white/40' : 'text-gray-500'} border-b pb-1`}>
             Historique des consultations ({historique.length})
@@ -854,6 +857,11 @@ function PatientDetailDrawer({ patient, onClose, dark }) {
                   <p className={`text-xs font-mono ${dark ? 'text-white/40' : 'text-gray-400'}`}>{formatDate(v.date)}</p>
                   <p className={`text-sm font-medium mt-0.5 ${dark ? 'text-white' : 'text-gray-800'}`}>{v.objet || 'Consultation'}</p>
                   {v.notes && <p className={`text-sm mt-1 ${dark ? 'text-white/60' : 'text-gray-500'}`}>{v.notes}</p>}
+                  {v.ordonnanceUrl && (
+                    <a href={v.ordonnanceUrl} target="_blank" rel="noopener noreferrer" className="text-sm mt-1 hover:underline flex items-center gap-1" style={{ color: C.teal }}>
+                      <PhotoIcon className="h-4 w-4" /> Voir l'ordonnance
+                    </a>
+                  )}
                 </div>
               ))}
             </div>
@@ -864,11 +872,125 @@ function PatientDetailDrawer({ patient, onClose, dark }) {
   );
 }
 
+// Section "Suivi physiologique" : graphique d'évolution + tableau des mesures
+function PatientVitalsSection({ patient, dark, onEditConstante, onDeleteConstante }) {
+  const constantesWithIndex = (patient.constantes || []).map((c, idx) => ({ ...c, _origIndex: idx }));
+  const constantes = [...constantesWithIndex].sort((a, b) => toDate(a.date) - toDate(b.date));
+  const chartData = constantes.map((c) => ({
+    date: formatDate(c.date),
+    Poids: c.poids ?? null,
+    Systolique: c.tensionSystolique ?? null,
+    Diastolique: c.tensionDiastolique ?? null,
+    Glycémie: c.glycemie ?? null,
+  }));
+  const gridColor = dark ? '#ffffff14' : '#00000010';
+  const axisColor = dark ? '#ffffff80' : '#6b7280';
+
+  return (
+    <div>
+      <h4 className={`text-sm font-semibold uppercase tracking-wider ${dark ? 'text-white/40' : 'text-gray-500'} border-b pb-1`}>
+        Suivi physiologique ({constantes.length})
+      </h4>
+      {constantes.length === 0 ? (
+        <p className={`text-sm mt-3 ${dark ? 'text-white/40' : 'text-gray-400'}`}>Aucune mesure enregistrée.</p>
+      ) : (
+        <div className="mt-3 space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="p-3 rounded-xl" style={{ background: dark ? C.cardDark : '#F9FAFB', border: `1px solid ${gridColor}` }}>
+              <p className={`text-xs font-medium mb-2 ${dark ? 'text-white/60' : 'text-gray-600'}`}>Poids (kg)</p>
+              <ResponsiveContainer width="100%" height={140}>
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: axisColor }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 10, fill: axisColor }} axisLine={false} tickLine={false} domain={['auto', 'auto']} />
+                  <Tooltip contentStyle={{ borderRadius: 8, fontSize: 12, border: 'none' }} />
+                  <Line type="monotone" dataKey="Poids" stroke={C.teal} strokeWidth={2} dot={{ r: 3 }} connectNulls />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="p-3 rounded-xl" style={{ background: dark ? C.cardDark : '#F9FAFB', border: `1px solid ${gridColor}` }}>
+              <p className={`text-xs font-medium mb-2 ${dark ? 'text-white/60' : 'text-gray-600'}`}>Glycémie (g/L)</p>
+              <ResponsiveContainer width="100%" height={140}>
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: axisColor }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 10, fill: axisColor }} axisLine={false} tickLine={false} domain={['auto', 'auto']} />
+                  <Tooltip contentStyle={{ borderRadius: 8, fontSize: 12, border: 'none' }} />
+                  <Line type="monotone" dataKey="Glycémie" stroke={C.amber} strokeWidth={2} dot={{ r: 3 }} connectNulls />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="p-3 rounded-xl sm:col-span-2" style={{ background: dark ? C.cardDark : '#F9FAFB', border: `1px solid ${gridColor}` }}>
+              <p className={`text-xs font-medium mb-2 ${dark ? 'text-white/60' : 'text-gray-600'}`}>Tension artérielle (mmHg)</p>
+              <ResponsiveContainer width="100%" height={140}>
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={gridColor} vertical={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: axisColor }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 10, fill: axisColor }} axisLine={false} tickLine={false} domain={['auto', 'auto']} />
+                  <Tooltip contentStyle={{ borderRadius: 8, fontSize: 12, border: 'none' }} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Line type="monotone" dataKey="Systolique" stroke={C.clay} strokeWidth={2} dot={{ r: 3 }} connectNulls />
+                  <Line type="monotone" dataKey="Diastolique" stroke={C.sage} strokeWidth={2} dot={{ r: 3 }} connectNulls />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+          <div className="overflow-x-auto rounded-xl" style={{ border: `1px solid ${gridColor}` }}>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className={dark ? 'text-white/40' : 'text-gray-500'}>
+                  <th className="text-left font-medium px-3 py-2">Date</th>
+                  <th className="text-left font-medium px-3 py-2">Poids</th>
+                  <th className="text-left font-medium px-3 py-2">Tension</th>
+                  <th className="text-left font-medium px-3 py-2">Glycémie</th>
+                  <th className="text-left font-medium px-3 py-2">Temp.</th>
+                  <th className="text-left font-medium px-3 py-2">Pouls</th>
+                  {(onEditConstante || onDeleteConstante) && <th className="text-right font-medium px-3 py-2">Actions</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {[...constantes].reverse().map((c, i) => (
+                  <tr key={i} className={dark ? 'text-white/80' : 'text-gray-700'} style={{ borderTop: `1px solid ${gridColor}` }}>
+                    <td className="px-3 py-2 whitespace-nowrap font-mono text-xs">{formatDate(c.date)}</td>
+                    <td className="px-3 py-2">{c.poids != null ? `${c.poids} kg` : '—'}</td>
+                    <td className="px-3 py-2">{(c.tensionSystolique != null || c.tensionDiastolique != null) ? `${c.tensionSystolique ?? '—'}/${c.tensionDiastolique ?? '—'}` : '—'}</td>
+                    <td className="px-3 py-2">{c.glycemie != null ? `${c.glycemie} g/L` : '—'}</td>
+                    <td className="px-3 py-2">{c.temperature != null ? `${c.temperature} °C` : '—'}</td>
+                    <td className="px-3 py-2">{c.pouls != null ? `${c.pouls} bpm` : '—'}</td>
+                    {(onEditConstante || onDeleteConstante) && (
+                      <td className="px-3 py-2">
+                        <div className="flex items-center justify-end gap-2">
+                          {onEditConstante && (
+                            <button type="button" onClick={() => onEditConstante(patient, c._origIndex)} className="p-1 text-gray-400 hover:text-indigo-600 rounded transition-colors" title="Modifier">
+                              <PencilSquareIcon className="h-4 w-4" />
+                            </button>
+                          )}
+                          {onDeleteConstante && (
+                            <button type="button" onClick={() => onDeleteConstante(patient, c._origIndex)} className="p-1 text-gray-400 hover:text-red-600 rounded transition-colors" title="Supprimer">
+                              <TrashIcon className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Modal de visite avec capitalisation en temps réel
 function VisitModal({ patient, onClose, onSave }) {
   const [objet, setObjet] = useState('');
   const [notes, setNotes] = useState('');
+  const [ordonnanceFile, setOrdonnanceFile] = useState(null);
   const [saving, setSaving] = useState(false);
+  const { push } = useToastStore();
 
   // Gestionnaires onChange avec capitalisation immédiate
   const handleObjetChange = (e) => {
@@ -879,12 +1001,26 @@ function VisitModal({ patient, onClose, onSave }) {
     setNotes(capitalizeSentences(e.target.value));
   };
 
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) setOrdonnanceFile(file);
+  };
+
   const submit = async (e) => {
     e.preventDefault();
     setSaving(true);
-    // Les données sont déjà capitalisées grâce aux onChange
-    await onSave({ date: new Date().toISOString(), objet, notes });
-    setSaving(false);
+    try {
+      let ordonnanceUrl = '';
+      if (ordonnanceFile) {
+        ordonnanceUrl = await uploadToCloudinary(ordonnanceFile);
+      }
+      // Les données sont déjà capitalisées grâce aux onChange
+      await onSave({ date: new Date().toISOString(), objet, notes, ordonnanceUrl: ordonnanceUrl || '' });
+    } catch (err) {
+      push('Erreur lors de l\'envoi de l\'ordonnance : ' + err.message, 'error');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -913,7 +1049,116 @@ function VisitModal({ patient, onClose, onSave }) {
             className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
           />
         </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Ordonnance (image)</label>
+          <div className="mt-1 flex items-center gap-3 flex-wrap">
+            <label className="cursor-pointer flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg border border-gray-300 transition-colors text-sm">
+              <PhotoIcon className="h-5 w-5" /> Choisir une image
+              <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
+            </label>
+            {ordonnanceFile && <span className="text-sm text-gray-600">{ordonnanceFile.name}</span>}
+          </div>
+        </div>
         <button disabled={saving} type="submit" className="w-full text-white font-semibold py-2.5 rounded-lg" style={{ background: C.teal }}>{saving ? 'Enregistrement...' : 'Enregistrer la visite'}</button>
+      </motion.form>
+    </div>
+  );
+}
+
+// Modal d'ajout de constantes physiologiques (poids, tension, glycémie, etc.)
+function ConstanteModal({ patient, initialData, onClose, onSave, onDelete }) {
+  const isEditing = !!initialData;
+  const [date, setDate] = useState(initialData ? toDate(initialData.date).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10));
+  const [poids, setPoids] = useState(initialData?.poids ?? '');
+  const [tensionSystolique, setTensionSystolique] = useState(initialData?.tensionSystolique ?? '');
+  const [tensionDiastolique, setTensionDiastolique] = useState(initialData?.tensionDiastolique ?? '');
+  const [glycemie, setGlycemie] = useState(initialData?.glycemie ?? '');
+  const [temperature, setTemperature] = useState(initialData?.temperature ?? '');
+  const [pouls, setPouls] = useState(initialData?.pouls ?? '');
+  const [notes, setNotes] = useState(initialData?.notes ?? '');
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const { push } = useToastStore();
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!poids && !tensionSystolique && !tensionDiastolique && !glycemie && !temperature && !pouls) {
+      push('Veuillez renseigner au moins une valeur', 'error');
+      return;
+    }
+    setSaving(true);
+    await onSave({
+      date: new Date(date).toISOString(),
+      poids: poids ? parseFloat(poids) : null,
+      tensionSystolique: tensionSystolique ? parseFloat(tensionSystolique) : null,
+      tensionDiastolique: tensionDiastolique ? parseFloat(tensionDiastolique) : null,
+      glycemie: glycemie ? parseFloat(glycemie) : null,
+      temperature: temperature ? parseFloat(temperature) : null,
+      pouls: pouls ? parseFloat(pouls) : null,
+      notes: capitalizeSentences(notes),
+    });
+    setSaving(false);
+  };
+
+  const handleDeleteClick = async () => {
+    setDeleting(true);
+    await onDelete();
+    setDeleting(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+      <motion.form initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} onSubmit={submit} className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+        <div className="flex justify-between items-center">
+          <h3 className="font-display text-lg text-gray-800">{isEditing ? 'Modifier la mesure' : 'Constantes'} — {patient.prenom} {patient.nom}</h3>
+          <button type="button" onClick={onClose}><XMarkIcon className="h-5 w-5 text-gray-400" /></button>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Date de la mesure</label>
+          <input
+            type="date" value={date} onChange={(e) => setDate(e.target.value)} required
+            className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Poids (kg)</label>
+            <input type="number" step="0.1" value={poids} onChange={(e) => setPoids(e.target.value)} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" placeholder="ex : 68.5" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Glycémie (g/L)</label>
+            <input type="number" step="0.01" value={glycemie} onChange={(e) => setGlycemie(e.target.value)} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" placeholder="ex : 1.05" />
+          </div>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Tension artérielle (mmHg)</label>
+          <div className="grid grid-cols-2 gap-3 mt-1">
+            <input type="number" value={tensionSystolique} onChange={(e) => setTensionSystolique(e.target.value)} className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" placeholder="Systolique (ex : 12)" />
+            <input type="number" value={tensionDiastolique} onChange={(e) => setTensionDiastolique(e.target.value)} className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" placeholder="Diastolique (ex : 8)" />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Température (°C)</label>
+            <input type="number" step="0.1" value={temperature} onChange={(e) => setTemperature(e.target.value)} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" placeholder="ex : 37.2" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Pouls (bpm)</label>
+            <input type="number" value={pouls} onChange={(e) => setPouls(e.target.value)} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" placeholder="ex : 72" />
+          </div>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Remarques</label>
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows="2" className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" />
+        </div>
+        <div className="flex gap-3">
+          <button disabled={saving || deleting} type="submit" className="flex-1 text-white font-semibold py-2.5 rounded-lg" style={{ background: C.teal }}>{saving ? 'Enregistrement...' : isEditing ? 'Mettre à jour' : 'Enregistrer la mesure'}</button>
+          {isEditing && onDelete && (
+            <button type="button" disabled={saving || deleting} onClick={handleDeleteClick} className="px-4 py-2.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors font-medium text-sm">
+              {deleting ? 'Suppression...' : 'Supprimer'}
+            </button>
+          )}
+        </div>
       </motion.form>
     </div>
   );
@@ -931,6 +1176,8 @@ function PatientsPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPatient, setEditingPatient] = useState(null);
   const [visitPatient, setVisitPatient] = useState(null);
+  const [constantePatient, setConstantePatient] = useState(null);
+  const [editingConstanteIndex, setEditingConstanteIndex] = useState(null);
   const [detailPatient, setDetailPatient] = useState(null);
   const [formData, setFormData] = useState({
     nom: '', prenom: '', genre: 'Homme', dateNaissance: '', adresse: '',
@@ -941,7 +1188,7 @@ function PatientsPage() {
     pathologieChronique: '', traitementChronique: [''],
     tabagisme: 'NON', alcool: 'NON', cafe: 'NON', regimeParticulier: 'NON', regimePrecision: '',
     activitePhysique: 'NON', activitePrecision: '', metier: '',
-    dateRenouvellement: '', ordonnanceUrl: '', ordonnanceFile: null, notes: ''
+    dateRenouvellement: '', notes: ''
   });
   const [isUploading, setIsUploading] = useState(false);
   const searchInputRef = useRef(null);
@@ -977,7 +1224,6 @@ function PatientsPage() {
   };
 
   const handleRadioChange = (e) => { setFormData({ ...formData, [e.target.name]: e.target.value }); };
-  const handleFileChange = (e) => { const file = e.target.files[0]; if (file) setFormData({ ...formData, ordonnanceFile: file }); };
 
   const resetForm = () => {
     setFormData({
@@ -989,7 +1235,7 @@ function PatientsPage() {
       pathologieChronique: '', traitementChronique: [''],
       tabagisme: 'NON', alcool: 'NON', cafe: 'NON', regimeParticulier: 'NON', regimePrecision: '',
       activitePhysique: 'NON', activitePrecision: '', metier: '',
-      dateRenouvellement: '', ordonnanceUrl: '', ordonnanceFile: null, notes: ''
+      dateRenouvellement: '', notes: ''
     });
     setEditingPatient(null);
     setIsModalOpen(false);
@@ -1018,7 +1264,7 @@ function PatientsPage() {
       activitePhysique: patient.activitePhysique || 'NON', activitePrecision: patient.activitePrecision || '',
       metier: patient.metier || '',
       dateRenouvellement: patient.dateRenouvellement ? toDate(patient.dateRenouvellement).toISOString().slice(0, 10) : '',
-      ordonnanceUrl: patient.ordonnanceUrl || '', ordonnanceFile: null, notes: patient.notes || ''
+      notes: patient.notes || ''
     });
     setIsModalOpen(true);
   };
@@ -1027,10 +1273,6 @@ function PatientsPage() {
     e.preventDefault();
     setIsUploading(true);
     try {
-      let ordonnanceUrl = formData.ordonnanceUrl;
-      if (formData.ordonnanceFile) {
-        ordonnanceUrl = await uploadToCloudinary(formData.ordonnanceFile);
-      }
       // Les données sont déjà capitalisées grâce aux onChange, mais on s'assure une dernière fois
       const patientData = {
         nom: formData.nom, prenom: formData.prenom, genre: formData.genre,
@@ -1051,14 +1293,14 @@ function PatientsPage() {
         activitePhysique: formData.activitePhysique, activitePrecision: formData.activitePrecision,
         metier: formData.metier,
         dateRenouvellement: formData.dateRenouvellement ? new Date(formData.dateRenouvellement).toISOString() : null,
-        ordonnanceUrl: ordonnanceUrl || '', notes: formData.notes,
+        notes: formData.notes,
         pharmacienId: user.uid, updatedAt: serverTimestamp()
       };
       if (editingPatient) {
         await updateDoc(doc(db, 'patients', editingPatient.id), patientData);
         push('Patient mis à jour', 'success');
       } else {
-        await addDoc(collection(db, 'patients'), { ...patientData, historique: [], createdAt: serverTimestamp() });
+        await addDoc(collection(db, 'patients'), { ...patientData, historique: [], constantes: [], createdAt: serverTimestamp() });
         push('Patient ajouté', 'success');
       }
       resetForm();
@@ -1088,6 +1330,49 @@ function PatientsPage() {
       setVisitPatient(null);
     } catch (err) {
       push('Erreur : ' + err.message, 'error');
+    }
+  };
+
+  const saveConstante = async (constante) => {
+    try {
+      if (editingConstanteIndex != null) {
+        const freshPatient = patients.find(p => p.id === constantePatient.id) || constantePatient;
+        const newConstantes = [...(freshPatient.constantes || [])];
+        newConstantes[editingConstanteIndex] = constante;
+        await updateDoc(doc(db, 'patients', constantePatient.id), {
+          constantes: newConstantes, updatedAt: serverTimestamp()
+        });
+        push('Mesure mise à jour', 'success');
+      } else {
+        await updateDoc(doc(db, 'patients', constantePatient.id), {
+          constantes: arrayUnion(constante), updatedAt: serverTimestamp()
+        });
+        push('Mesure enregistrée', 'success');
+      }
+      setConstantePatient(null);
+      setEditingConstanteIndex(null);
+    } catch (err) {
+      push('Erreur : ' + err.message, 'error');
+    }
+  };
+
+  const openAddConstante = (patient) => { setConstantePatient(patient); setEditingConstanteIndex(null); };
+  const openEditConstante = (patient, idx) => { setConstantePatient(patient); setEditingConstanteIndex(idx); };
+  const closeConstanteModal = () => { setConstantePatient(null); setEditingConstanteIndex(null); };
+
+  const deleteConstante = async (patient, idx) => {
+    if (!confirm('Supprimer cette mesure ?')) return false;
+    try {
+      const freshPatient = patients.find(p => p.id === patient.id) || patient;
+      const newConstantes = (freshPatient.constantes || []).filter((_, i) => i !== idx);
+      await updateDoc(doc(db, 'patients', patient.id), {
+        constantes: newConstantes, updatedAt: serverTimestamp()
+      });
+      push('Mesure supprimée', 'success');
+      return true;
+    } catch (err) {
+      push('Erreur : ' + err.message, 'error');
+      return false;
     }
   };
 
@@ -1140,10 +1425,10 @@ function PatientsPage() {
                     <button onClick={() => handleDelete(patient.id)} className="p-1.5 text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors" title="Supprimer"><TrashIcon className="h-5 w-5" /></button>
                   </div>
                 </div>
-                {patient.ordonnanceUrl && <a href={patient.ordonnanceUrl} target="_blank" rel="noopener noreferrer" className="text-sm hover:underline flex items-center gap-1 mt-2" style={{ color: C.teal }}><PhotoIcon className="h-4 w-4" /> Voir ordonnance</a>}
                 {renouvJours !== null && <div className={`mt-2 text-xs px-2 py-1 rounded-lg inline-flex items-center gap-1 ${renouvUrgent ? 'bg-amber-50 text-amber-700' : (dark ? 'text-white/40' : 'text-gray-400')}`}><CalendarDaysIcon className="h-3.5 w-3.5" />{renouvJours < 0 ? `RDV en retard de ${Math.abs(renouvJours)}j` : `RDV dans ${renouvJours}j`}</div>}
                 <div className="flex flex-wrap gap-1 mt-3">
                   <button onClick={() => setVisitPatient(patient)} className="flex-1 text-xs font-medium py-1.5 rounded-lg border transition-colors" style={{ borderColor: C.teal + '55', color: C.teal }}>+ Consultation</button>
+                  <button onClick={() => openAddConstante(patient)} className="flex-1 text-xs font-medium py-1.5 rounded-lg border transition-colors" style={{ borderColor: C.sage + '55', color: C.sage }}>+ Constante</button>
                   {contact && (
                     <>
                       <button onClick={() => handleCall(contact)} className="flex-1 text-xs font-medium py-1.5 rounded-lg bg-green-50 text-green-700 hover:bg-green-100 transition-colors flex items-center justify-center gap-1"><PhoneIcon className="h-3 w-3" /> Appeler</button>
@@ -1158,10 +1443,19 @@ function PatientsPage() {
         </div>
       )}
       <AnimatePresence>
-        {detailPatient && <PatientDetailDrawer patient={patients.find(p => p.id === detailPatient.id) || detailPatient} onClose={() => setDetailPatient(null)} dark={dark} />}
+        {detailPatient && <PatientDetailDrawer patient={patients.find(p => p.id === detailPatient.id) || detailPatient} onClose={() => setDetailPatient(null)} dark={dark} onEditConstante={openEditConstante} onDeleteConstante={deleteConstante} />}
       </AnimatePresence>
       {detailPatient && <div className="fixed inset-0 bg-black/30 z-40" onClick={() => setDetailPatient(null)} />}
       {visitPatient && <VisitModal patient={visitPatient} onClose={() => setVisitPatient(null)} onSave={saveVisit} />}
+      {constantePatient && (
+        <ConstanteModal
+          patient={constantePatient}
+          initialData={editingConstanteIndex != null ? (patients.find(p => p.id === constantePatient.id) || constantePatient).constantes?.[editingConstanteIndex] : null}
+          onClose={closeConstanteModal}
+          onSave={saveConstante}
+          onDelete={editingConstanteIndex != null ? async () => { const ok = await deleteConstante(constantePatient, editingConstanteIndex); if (ok) closeConstanteModal(); } : null}
+        />
+      )}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto p-6">
@@ -1360,9 +1654,10 @@ function PatientsPage() {
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div><label className="block text-sm font-medium text-gray-700">Prochain RDV</label><input type="date" name="dateRenouvellement" value={formData.dateRenouvellement} onChange={handleRadioChange} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" /><p className="text-xs text-gray-400 mt-1">Un rappel apparaîtra 7 jours avant cette date</p></div>
-                <div><label className="block text-sm font-medium text-gray-700">Ordonnance (image)</label><div className="mt-1 flex items-center gap-4 flex-wrap"><label className="cursor-pointer flex items-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg border border-gray-300 transition-colors"><PhotoIcon className="h-5 w-5" /> Choisir une image<input type="file" accept="image/*" onChange={handleFileChange} className="hidden" /></label>{formData.ordonnanceFile && <span className="text-sm text-gray-600">{formData.ordonnanceFile.name}</span>}{formData.ordonnanceUrl && !formData.ordonnanceFile && <a href={formData.ordonnanceUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-indigo-600 hover:underline">Voir l'image actuelle</a>}</div></div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Prochain RDV</label>
+                <input type="date" name="dateRenouvellement" value={formData.dateRenouvellement} onChange={handleRadioChange} className="w-full sm:w-1/2 mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" />
+                <p className="text-xs text-gray-400 mt-1">Un rappel apparaîtra 7 jours avant cette date. L'ordonnance s'ajoute désormais lors de chaque consultation.</p>
               </div>
               {isUploading && <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden"><motion.div initial={{ width: '10%' }} animate={{ width: '90%' }} transition={{ duration: 1.2 }} className="h-2.5 rounded-full" style={{ background: C.teal }} /></div>}
               <div className="flex gap-3 pt-2">

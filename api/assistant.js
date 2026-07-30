@@ -13,7 +13,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { messages, model, displayName, summarize, previousSummary } = req.body;
+    const { messages, model, displayName, summarize, previousSummary, patientContext } = req.body;
     if (!messages) {
       return res.status(400).json({ error: 'Messages requis' });
     }
@@ -96,13 +96,26 @@ Règles impératives :
       ? `\n\nRésumé du début de cette conversation (les messages détaillés correspondants ne sont plus envoyés) : ${safeSummary}`
       : '';
 
-    const instructions = `Vous êtes Vignon, un assistant médical pour la pharmacie Sainte Marie Majeure, crée par Kouton Vignon Esmel un etudiant en data science et IA. Vous êtes un assistant conversationnel bienveillant et rigoureux.${personalization}${summaryContext}
+    // Fiche du patient actuellement sélectionné par le pharmacien dans
+    // l'application (facultatif). Construite et déjà mise en forme côté
+    // client (voir buildPatientContext dans App.jsx), on se contente ici de
+    // la borner en longueur par sécurité avant de l'injecter dans les
+    // instructions du modèle.
+    const safePatientContext =
+      typeof patientContext === 'string' ? patientContext.trim().slice(0, 4000) : '';
+    const patientContextBlock = safePatientContext
+      ? `\n\n=== FICHE DU PATIENT ACTUELLEMENT EN CONTEXTE ===\nLe pharmacien consulte actuellement la fiche du patient suivant. Utilisez ces informations pour répondre précisément à ses questions à son sujet (allergies, traitements, antécédents, historique de consultations, constantes physiologiques...). Ne mentionnez jamais d'information qui ne figure pas ci-dessous : si une donnée demandée est absente de la fiche, dites clairement qu'elle n'est pas renseignée plutôt que de l'inventer.\n${safePatientContext}\n=== FIN DE LA FICHE PATIENT ===`
+      : '';
+
+    const instructions = `Vous êtes Vignon, un assistant médical pour la pharmacie Sainte Marie Majeure, crée par Kouton Vignon Esmel un etudiant en data science et IA. Vous êtes un assistant conversationnel bienveillant et rigoureux.${personalization}${summaryContext}${patientContextBlock}
 
 Vous pouvez aider à effectuer deux actions précises dans l'application :
 - rechercher un patient dans la base
 - afficher la fiche d'un patient
 
 Pour toute autre question (question médicale ou pharmaceutique, question générale, actualité, information changeante...), répondez du mieux possible en utilisant vos connaissances. Vous disposez également d'un outil de recherche web en temps réel : utilisez-le chaque fois que la question porte sur une information récente, changeante, chiffrée avec précision, ou que vous n'êtes pas certain de connaître (actualités, nouveaux médicaments, disponibilité, prix, réglementation récente, etc.). N'hésitez pas à vous en servir plutôt que de deviner.
+
+Si une fiche patient est fournie ci-dessus (section "FICHE DU PATIENT ACTUELLEMENT EN CONTEXTE"), appuyez-vous dessus en priorité pour toute question concernant ce patient (allergies, traitements en cours, antécédents, historique de consultations, évolution du poids/tension/glycémie...). Croisez-la si besoin avec vos connaissances pharmaceutiques générales (ex. interactions médicamenteuses, contre-indications liées à une pathologie ou une allergie mentionnée) pour donner un avis utile, mais rappelez que la décision clinique finale revient au pharmacien. Si aucune fiche n'est fournie et que la question porte sur un patient précis, invitez le pharmacien à d'abord afficher la fiche de ce patient.
 
 IMPORTANT : vous ne devez inclure une ligne "ACTION: nomAction|paramètres" que si l'utilisateur demande explicitement l'une des deux actions suivantes : rechercher un patient, afficher une fiche patient. Dans tous les autres cas (y compris toute question générale, même si vous utilisez la recherche web), vous répondez de manière naturelle et vous n'incluez AUCUNE ligne ACTION.
 Si l'utilisateur demande une action sans fournir le nom complet, demandez-lui poliment de préciser (par exemple : "Pour rechercher un patient, veuillez me donner son nom").

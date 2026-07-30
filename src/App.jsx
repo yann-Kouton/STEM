@@ -1511,6 +1511,17 @@ function AssistantPage() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
+  // === Résumé progressif de l'historique (économie de tokens) ===
+  // `summary` condense tout ce qui précède `summarizedCount` messages.
+  // Seuls les messages APRÈS ce point, plus le résumé, sont envoyés à l'API :
+  // le reste de l'historique reste visible à l'écran mais ne coûte plus rien.
+  const [summary, setSummary] = useState(() => localStorage.getItem('vignon_chat_summary') || '');
+  const [summarizedCount, setSummarizedCount] = useState(
+    () => parseInt(localStorage.getItem('vignon_chat_summarized_count') || '0', 10)
+  );
+  const SUMMARY_TRIGGER = 12; // au-delà de ce nb de messages non résumés, on condense
+  const KEEP_RECENT = 6; // nb de messages bruts toujours conservés tels quels
+
   const chatContainerRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -1528,6 +1539,11 @@ function AssistantPage() {
   }, [messages]);
 
   useEffect(() => {
+    localStorage.setItem('vignon_chat_summary', summary);
+    localStorage.setItem('vignon_chat_summarized_count', String(summarizedCount));
+  }, [summary, summarizedCount]);
+
+  useEffect(() => {
     if (chatContainerRef.current) {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
@@ -1540,14 +1556,19 @@ function AssistantPage() {
   const MODEL = 'mistral-medium-latest';
   const isDev = import.meta.env.DEV;
 
-  const sendToAssistant = async (messages) => {
+  const sendToAssistant = async (messages, conversationSummary) => {
     const apiUrl = isDev
       ? 'http://localhost:3000/api/assistant'
       : '/api/assistant';
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages, model: MODEL, userName: pharmacienName }),
+      body: JSON.stringify({
+        messages,
+        model: MODEL,
+        displayName: pharmacienName,
+        previousSummary: conversationSummary || undefined,
+      }),
     });
     if (!response.ok) {
       const error = await response.text();
@@ -1556,18 +1577,66 @@ function AssistantPage() {
     return response.json();
   };
 
+  // Appel caché qui condense un lot de vieux messages (+ résumé existant
+  // éventuel) en un résumé court, via un modèle moins cher côté serveur.
+  const summarizeOldMessages = async (batch, existingSummary) => {
+    const apiUrl = isDev
+      ? 'http://localhost:3000/api/assistant'
+      : '/api/assistant';
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        summarize: true,
+        messages: batch,
+        previousSummary: existingSummary || undefined,
+      }),
+    });
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(error);
+    }
+    const data = await response.json();
+    return data.summary;
+  };
+
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
     const userMsg = input.trim();
     setInput('');
-    setMessages((prev) => [...prev, { role: 'user', content: userMsg }]);
+    const updatedMessages = [...messages, { role: 'user', content: userMsg }];
+    setMessages(updatedMessages);
     setIsLoading(true);
 
     try {
-      const response = await sendToAssistant([
-        ...messages,
-        { role: 'user', content: userMsg },
-      ]);
+      // Historique pas encore condensé (ce qui suit `summarizedCount`)
+      let currentSummary = summary;
+      let currentSummarizedCount = summarizedCount;
+      const notYetSummarized = updatedMessages.slice(currentSummarizedCount);
+
+      // Si ça dépasse le seuil, on condense tout sauf les derniers messages
+      // (qu'on garde bruts pour ne pas perdre le fil immédiat de l'échange).
+      if (notYetSummarized.length > SUMMARY_TRIGGER) {
+        const toArchive = notYetSummarized.slice(0, notYetSummarized.length - KEEP_RECENT);
+        if (toArchive.length > 0) {
+          try {
+            const newSummary = await summarizeOldMessages(toArchive, currentSummary);
+            if (newSummary) {
+              currentSummary = newSummary;
+              currentSummarizedCount += toArchive.length;
+              setSummary(currentSummary);
+              setSummarizedCount(currentSummarizedCount);
+            }
+          } catch (summaryError) {
+            // Si le résumé échoue, on continue avec l'historique complet
+            // cette fois-ci plutôt que de bloquer la conversation.
+            console.warn('Résumé de conversation impossible :', summaryError);
+          }
+        }
+      }
+
+      const windowMessages = updatedMessages.slice(currentSummarizedCount);
+      const response = await sendToAssistant(windowMessages, currentSummary);
       let assistantContent = response.content;
       let action = response.action;
 
@@ -1609,6 +1678,10 @@ function AssistantPage() {
     };
     setMessages([welcomeMessage]);
     localStorage.setItem('vignon_chat_messages', JSON.stringify([welcomeMessage]));
+    setSummary('');
+    setSummarizedCount(0);
+    localStorage.removeItem('vignon_chat_summary');
+    localStorage.removeItem('vignon_chat_summarized_count');
     setInput('');
   };
 

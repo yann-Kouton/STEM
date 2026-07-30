@@ -13,7 +13,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { messages, model, displayName } = req.body;
+    const { messages, model, displayName, summarize, previousSummary } = req.body;
     if (!messages) {
       return res.status(400).json({ error: 'Messages requis' });
     }
@@ -22,6 +22,54 @@ export default async function handler(req, res) {
     if (!mistralApiKey) {
       console.error('Clé Mistral manquante');
       return res.status(500).json({ error: 'Configuration serveur manquante' });
+    }
+
+    // === Mode résumé (appel caché, modèle léger, pas d'outils) ===
+    // Le front envoie ici un lot de vieux messages à condenser pour
+    // économiser des tokens sur les prochains appels. On utilise un modèle
+    // moins cher (mistral-small) et une consigne stricte pour ne jamais
+    // perdre d'information cliniquement ou administrativement importante.
+    if (summarize) {
+      const summarySystemPrompt = `Tu résumes un extrait de conversation entre un pharmacien d'officine et un assistant IA médical, pour compresser l'historique et économiser des tokens.
+
+Règles impératives :
+- Résumé factuel, 4 à 8 phrases maximum, en français.
+- Conserve absolument : noms de patients cités, symptômes/pathologies évoqués, médicaments/posologies mentionnés, actions déjà réalisées (recherche patient, fiche affichée), questions restées sans réponse, décisions ou recommandations données.
+- N'invente strictement aucune information absente de l'échange.
+- Pas de formules de politesse, pas de commentaire, uniquement le résumé.
+- Si un résumé précédent est fourni, fusionne-le avec les nouveaux messages en un seul résumé cohérent (ne double pas les informations déjà couvertes).`;
+
+      const summaryUserContent = previousSummary
+        ? `Résumé précédent :\n${previousSummary}\n\nNouveaux messages à intégrer :\n` +
+          messages.map((m) => `${m.role === 'user' ? 'Pharmacien' : 'Assistant'}: ${m.content}`).join('\n')
+        : `Messages à résumer :\n` +
+          messages.map((m) => `${m.role === 'user' ? 'Pharmacien' : 'Assistant'}: ${m.content}`).join('\n');
+
+      const summaryResponse = await fetch('https://api.mistral.ai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${mistralApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'mistral-small-latest',
+          messages: [
+            { role: 'system', content: summarySystemPrompt },
+            { role: 'user', content: summaryUserContent },
+          ],
+          temperature: 0.2,
+          max_tokens: 350,
+        }),
+      });
+
+      if (!summaryResponse.ok) {
+        const errorText = await summaryResponse.text();
+        throw new Error(errorText);
+      }
+
+      const summaryData = await summaryResponse.json();
+      const summary = summaryData.choices?.[0]?.message?.content?.trim() || '';
+      return res.status(200).json({ summary });
     }
 
     // mistral-tiny ne supporte pas la Conversations API / le websearch :
@@ -38,7 +86,17 @@ export default async function handler(req, res) {
       ? `\n\nL'utilisateur actuellement connecté s'appelle ${safeUserName} (pharmacien de l'officine). Adressez-vous à lui par son prénom de façon naturelle (par exemple en le saluant ou ponctuellement dans vos réponses), sans le répéter systématiquement à chaque message pour ne pas être lourd.`
       : '';
 
-    const instructions = `Vous êtes Vignon, un assistant médical pour la pharmacie Sainte Marie Majeure. Vous êtes un assistant conversationnel bienveillant et rigoureux.${personalization}
+    // Résumé condensé du début de la conversation, généré côté client via le
+    // mode `summarize` ci-dessus. Permet de garder le contexte (nom du
+    // patient, symptômes, actions déjà faites...) sans renvoyer tous les
+    // messages bruts à chaque requête.
+    const safeSummary =
+      typeof previousSummary === 'string' ? previousSummary.trim().slice(0, 1500) : '';
+    const summaryContext = safeSummary
+      ? `\n\nRésumé du début de cette conversation (les messages détaillés correspondants ne sont plus envoyés) : ${safeSummary}`
+      : '';
+
+    const instructions = `Vous êtes Vignon, un assistant médical pour la pharmacie Sainte Marie Majeure, crée par Kouton Vignon Esmel un etudiant en data science et IA. Vous êtes un assistant conversationnel bienveillant et rigoureux.${personalization}${summaryContext}
 
 Vous pouvez aider à effectuer deux actions précises dans l'application :
 - rechercher un patient dans la base

@@ -30,7 +30,6 @@ import {
 const CLOUDINARY_CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
 const CLOUDINARY_UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
 
-// === Fonction d'upload vers Cloudinary ===
 async function uploadToCloudinary(file) {
   if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_UPLOAD_PRESET) {
     throw new Error('Cloudinary non configuré. Vérifiez vos variables d\'environnement.');
@@ -163,24 +162,21 @@ function normalizePhoneForWhatsApp(telephone) {
   return clean;
 }
 
-// === Gestion des statuts de rendez-vous ===
 const RDV_STATUTS = ['Prévu', 'Effectué', 'Manqué', 'Annulé'];
 function rdvStatutStyle(statut) {
   switch (statut) {
     case 'Effectué': return { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' };
     case 'Manqué': return { bg: 'bg-red-50', text: 'text-red-600', border: 'border-red-200' };
     case 'Annulé': return { bg: 'bg-gray-100', text: 'text-gray-500', border: 'border-gray-200' };
-    default: return { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' }; // Prévu
+    default: return { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' };
   }
 }
-// Retourne le prochain RDV "Prévu" le plus proche (peut être en retard) parmi la liste de RDV d'un patient
 function nextRendezVous(rendezVous) {
   const prevus = (rendezVous || []).filter((r) => r.statut === 'Prévu' && r.date);
   if (prevus.length === 0) return null;
   return [...prevus].sort((a, b) => toDate(a.date) - toDate(b.date))[0];
 }
 
-// Fonction de calcul d'âge
 function calculAge(dateNaissance) {
   if (!dateNaissance) return null;
   const naissance = toDate(dateNaissance);
@@ -194,18 +190,14 @@ function calculAge(dateNaissance) {
   return age;
 }
 
-// Fonction pour capitaliser la première lettre de chaque phrase
 function capitalizeSentences(text) {
   if (!text) return text;
-  // Diviser le texte en phrases en utilisant les séparateurs . ? !
   const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
-  // Capitaliser la première lettre de chaque phrase
   const capitalized = sentences.map(sentence => {
     const trimmed = sentence.trim();
     if (trimmed.length === 0) return sentence;
     return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
   });
-  // Rejoindre les phrases avec un espace (ou conserver la ponctuation)
   return capitalized.join(' ');
 }
 
@@ -284,19 +276,17 @@ function LoginPage() {
   try {
     const result = await loginWithGoogle();
     const user = result.user;
-    // Extraire prénom et nom depuis displayName
     const fullName = user.displayName || '';
     const nameParts = fullName.split(' ');
     const prenom = nameParts[0] || '';
     const nom = nameParts.slice(1).join(' ') || '';
-    // Créer le document pharmacien s'il n'existe pas
     await setDoc(doc(db, 'pharmaciens', user.uid), {
       nom,
       prenom,
       email: user.email,
       displayName: fullName,
       createdAt: serverTimestamp()
-    }, { merge: true }); // merge: true pour ne pas écraser si déjà existant
+    }, { merge: true }); 
     navigate('/dashboard');
   } catch (err) {
     setError(err.message);
@@ -901,7 +891,6 @@ function PatientDetailDrawer({ patient, onClose, dark, onEditConstante, onDelete
   );
 }
 
-// Section "Suivi physiologique" : graphique d'évolution + tableau des mesures
 function PatientVitalsSection({ patient, dark, onEditConstante, onDeleteConstante }) {
   const constantesWithIndex = (patient.constantes || []).map((c, idx) => ({ ...c, _origIndex: idx }));
   const constantes = [...constantesWithIndex].sort((a, b) => toDate(a.date) - toDate(b.date));
@@ -1013,7 +1002,6 @@ function PatientVitalsSection({ patient, dark, onEditConstante, onDeleteConstant
   );
 }
 
-// Modal de visite avec capitalisation en temps réel
 function VisitModal({ patient, onClose, onSave }) {
   const [objet, setObjet] = useState('');
   const [notes, setNotes] = useState('');
@@ -1021,7 +1009,6 @@ function VisitModal({ patient, onClose, onSave }) {
   const [saving, setSaving] = useState(false);
   const { push } = useToastStore();
 
-  // Gestionnaires onChange avec capitalisation immédiate
   const handleObjetChange = (e) => {
     setObjet(capitalizeSentences(e.target.value));
   };
@@ -1043,7 +1030,6 @@ function VisitModal({ patient, onClose, onSave }) {
       if (ordonnanceFile) {
         ordonnanceUrl = await uploadToCloudinary(ordonnanceFile);
       }
-      // Les données sont déjà capitalisées grâce aux onChange
       await onSave({ date: new Date().toISOString(), objet, notes, ordonnanceUrl: ordonnanceUrl || '' });
     } catch (err) {
       push('Erreur lors de l\'envoi de l\'ordonnance : ' + err.message, 'error');
@@ -1094,7 +1080,6 @@ function VisitModal({ patient, onClose, onSave }) {
   );
 }
 
-// Modal d'ajout de constantes physiologiques (poids, tension, glycémie, etc.)
 function ConstanteModal({ patient, initialData, onClose, onSave, onDelete }) {
   const isEditing = !!initialData;
   const [date, setDate] = useState(initialData ? toDate(initialData.date).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10));
@@ -1193,7 +1178,6 @@ function ConstanteModal({ patient, initialData, onClose, onSave, onDelete }) {
   );
 }
 
-// Modal d'ajout / modification d'un rendez-vous
 function RendezVousModal({ patient, initialData, onClose, onSave, onDelete }) {
   const isEditing = !!initialData;
   const [date, setDate] = useState(initialData ? toDate(initialData.date).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10));
@@ -1266,7 +1250,6 @@ function RendezVousModal({ patient, initialData, onClose, onSave, onDelete }) {
   );
 }
 
-// Section "Rendez-vous" affichée dans la fiche patient : liste + changement de statut rapide
 function RendezVousSection({ patient, dark, onAddRdv, onEditRdv, onDeleteRdv, onSetStatut }) {
   const rendezVous = [...(patient.rendezVous || [])]
     .map((r, idx) => ({ ...r, _origIndex: idx }))
@@ -1381,7 +1364,6 @@ function PatientsPage() {
     (p.contact1 || p.telephone || '').includes(searchTerm)
   );
 
-  // Fonction utilitaire pour créer un gestionnaire de changement avec capitalisation immédiate
   const createCapitalizedChangeHandler = (field) => (e) => {
     const value = e.target.value;
     setFormData(prev => ({
@@ -1435,10 +1417,6 @@ function PatientsPage() {
     setIsModalOpen(true);
   };
 
-  // Envoi (silencieux, non bloquant) du SMS de bienvenue via l'API SMSGate
-  // dès qu'un nouveau patient est enregistré. N'empêche jamais la création
-  // du patient de réussir si le SMS échoue (ex : passerelle SMSGate hors
-  // ligne) : on prévient juste discrètement le pharmacien dans ce cas.
   const sendWelcomeSms = (patientData) => {
     if (!patientData.contact1) return;
     const apiUrl = import.meta.env.DEV ? 'http://localhost:3000/api/send-sms' : '/api/send-sms';
@@ -1461,7 +1439,6 @@ function PatientsPage() {
     e.preventDefault();
     setIsUploading(true);
     try {
-      // Les données sont déjà capitalisées grâce aux onChange, mais on s'assure une dernière fois
       const patientData = {
         nom: formData.nom, prenom: formData.prenom, genre: formData.genre,
         dateNaissance: formData.dateNaissance ? new Date(formData.dateNaissance).toISOString() : null,
@@ -1944,7 +1921,6 @@ function PatientsPage() {
   );
 }
 
-// === Rendu markdown compact pour les bulles du chat assistant ===
 function ChatMarkdown({ content, dark, isUser }) {
   const linkColor = isUser ? '#FFFFFF' : C.teal;
   const subtleBg = dark ? 'bg-black/25' : 'bg-black/5';
@@ -2002,7 +1978,6 @@ function ChatMarkdown({ content, dark, isUser }) {
   );
 }
 
-// Extrait le prénom depuis le displayName Firebase ("Dr. Prenom Nom" -> "Prenom")
 function getPharmacienFirstName(user) {
   if (!user) return null;
   const raw = user.displayName || '';
@@ -2053,6 +2028,180 @@ function executeAction(action, params, context) {
   }
 }
 
+function formatQuestionnaireAnswers(questionnaire, answers) {
+  const lines = questionnaire.questions.map((q) => {
+    const raw = answers[q.id];
+    let value;
+    if (q.type === 'checkbox') {
+      value = Array.isArray(raw) && raw.length ? raw.join(', ') : 'Aucune réponse';
+    } else if (raw === undefined || raw === null || raw === '') {
+      value = 'Non renseigné';
+    } else {
+      value = String(raw);
+    }
+    return `- ${q.label} : ${value}`;
+  });
+  return `Réponses du patient au questionnaire « ${questionnaire.title} » :\n${lines.join('\n')}`;
+}
+
+function QuestionnaireForm({ questionnaire, answers, onSubmit, dark, disabled }) {
+  const isAnswered = !!answers;
+
+  const initialValues = useMemo(() => {
+    const init = {};
+    questionnaire.questions.forEach((q) => {
+      if (answers && answers[q.id] !== undefined) {
+        init[q.id] = answers[q.id];
+      } else if (q.type === 'checkbox') {
+        init[q.id] = [];
+      } else if (q.type === 'scale') {
+        init[q.id] = Math.round((q.min + q.max) / 2);
+      } else {
+        init[q.id] = '';
+      }
+    });
+    return init;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [questionnaire]);
+
+  const [values, setValues] = useState(initialValues);
+
+  const setValue = (id, val) => setValues((prev) => ({ ...prev, [id]: val }));
+
+  const toggleCheckbox = (id, option) => {
+    setValues((prev) => {
+      const current = Array.isArray(prev[id]) ? prev[id] : [];
+      const next = current.includes(option)
+        ? current.filter((o) => o !== option)
+        : [...current, option];
+      return { ...prev, [id]: next };
+    });
+  };
+
+  const allFilled = questionnaire.questions.every((q) => {
+    const v = values[q.id];
+    if (q.type === 'checkbox') return Array.isArray(v) && v.length > 0;
+    if (q.type === 'scale') return v !== undefined && v !== null;
+    return typeof v === 'string' && v.trim() !== '';
+  });
+
+  const subtleBorder = dark ? 'border-white/15' : 'border-gray-200';
+  const cardBg = dark ? 'bg-black/20' : 'bg-white';
+  const pillBase = dark ? 'border-white/20 text-white/70' : 'border-gray-300 text-gray-600';
+
+  return (
+    <div className={`mt-2 rounded-xl border ${subtleBorder} ${cardBg} p-3 space-y-3`}>
+      <div className="flex items-center gap-2">
+        <ClipboardDocumentListIcon className="h-4 w-4 flex-shrink-0" style={{ color: C.amber }} />
+        <p className={`text-sm font-semibold ${dark ? 'text-white' : 'text-gray-800'}`}>{questionnaire.title}</p>
+        {isAnswered && (
+          <span className={`ml-auto text-[11px] px-2 py-0.5 rounded-full flex-shrink-0 ${dark ? 'bg-emerald-500/20 text-emerald-300' : 'bg-emerald-50 text-emerald-700'}`}>
+            Réponses envoyées
+          </span>
+        )}
+      </div>
+
+      <div className="space-y-3">
+        {questionnaire.questions.map((q) => (
+          <div key={q.id}>
+            <p className={`text-xs font-medium mb-1.5 ${dark ? 'text-white/80' : 'text-gray-600'}`}>{q.label}</p>
+
+            {q.type === 'text' && (
+              isAnswered ? (
+                <p className={`text-sm ${dark ? 'text-white' : 'text-gray-800'}`}>{values[q.id] || 'Non renseigné'}</p>
+              ) : (
+                <input
+                  type="text"
+                  value={values[q.id] || ''}
+                  onChange={(e) => setValue(q.id, e.target.value)}
+                  disabled={disabled}
+                  className={`w-full px-3 py-1.5 rounded-lg border text-sm outline-none ${dark ? 'bg-[#0F2E29] border-white/10 text-white' : 'bg-white border-gray-300'}`}
+                />
+              )
+            )}
+
+            {q.type === 'radio' && (
+              <div className="flex flex-wrap gap-1.5">
+                {q.options.map((opt) => {
+                  const active = values[q.id] === opt;
+                  return (
+                    <button
+                      key={opt}
+                      type="button"
+                      disabled={isAnswered || disabled}
+                      onClick={() => setValue(q.id, opt)}
+                      className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${
+                        active ? 'text-white' : pillBase
+                      } ${isAnswered ? 'opacity-80 cursor-default' : 'hover:opacity-80'}`}
+                      style={active ? { background: C.teal, borderColor: C.teal } : {}}
+                    >
+                      {opt}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {q.type === 'checkbox' && (
+              <div className="flex flex-wrap gap-1.5">
+                {q.options.map((opt) => {
+                  const active = Array.isArray(values[q.id]) && values[q.id].includes(opt);
+                  return (
+                    <button
+                      key={opt}
+                      type="button"
+                      disabled={isAnswered || disabled}
+                      onClick={() => toggleCheckbox(q.id, opt)}
+                      className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${
+                        active ? 'text-white' : pillBase
+                      } ${isAnswered ? 'opacity-80 cursor-default' : 'hover:opacity-80'}`}
+                      style={active ? { background: C.amber, borderColor: C.amber } : {}}
+                    >
+                      {opt}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {q.type === 'scale' && (
+              <div className="flex items-center gap-3">
+                <input
+                  type="range"
+                  min={q.min}
+                  max={q.max}
+                  value={values[q.id]}
+                  disabled={isAnswered || disabled}
+                  onChange={(e) => setValue(q.id, Number(e.target.value))}
+                  className="flex-1"
+                  style={{ accentColor: C.teal }}
+                />
+                <span className={`text-sm font-mono w-8 text-right ${dark ? 'text-white' : 'text-gray-800'}`}>
+                  {values[q.id]}
+                </span>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {!isAnswered && (
+        <button
+          type="button"
+          onClick={() => onSubmit(values)}
+          disabled={disabled || !allFilled}
+          className={`w-full mt-1 px-3 py-1.5 rounded-lg text-sm font-medium text-white transition-opacity ${
+            disabled || !allFilled ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-90'
+          }`}
+          style={{ background: C.teal }}
+        >
+          Envoyer les réponses à Vignon
+        </button>
+      )}
+    </div>
+  );
+}
+
 function AssistantPage() {
   const { dark } = useUIStore();
   const { push } = useToastStore();
@@ -2078,16 +2227,12 @@ function AssistantPage() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // === Résumé progressif de l'historique (économie de tokens) ===
-  // `summary` condense tout ce qui précède `summarizedCount` messages.
-  // Seuls les messages APRÈS ce point, plus le résumé, sont envoyés à l'API :
-  // le reste de l'historique reste visible à l'écran mais ne coûte plus rien.
   const [summary, setSummary] = useState(() => localStorage.getItem('vignon_chat_summary') || '');
   const [summarizedCount, setSummarizedCount] = useState(
     () => parseInt(localStorage.getItem('vignon_chat_summarized_count') || '0', 10)
   );
-  const SUMMARY_TRIGGER = 12; // au-delà de ce nb de messages non résumés, on condense
-  const KEEP_RECENT = 6; // nb de messages bruts toujours conservés tels quels
+  const SUMMARY_TRIGGER = 12; 
+  const KEEP_RECENT = 6; 
 
   const chatContainerRef = useRef(null);
   const inputRef = useRef(null);
@@ -2144,8 +2289,6 @@ function AssistantPage() {
     return response.json();
   };
 
-  // Appel caché qui condense un lot de vieux messages (+ résumé existant
-  // éventuel) en un résumé court, via un modèle moins cher côté serveur.
   const summarizeOldMessages = async (batch, existingSummary) => {
     const apiUrl = isDev
       ? 'http://localhost:3000/api/assistant'
@@ -2167,22 +2310,17 @@ function AssistantPage() {
     return data.summary;
   };
 
-  const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
-    const userMsg = input.trim();
-    setInput('');
+  const sendUserMessage = async (userMsg) => {
+    if (!userMsg.trim() || isLoading) return;
     const updatedMessages = [...messages, { role: 'user', content: userMsg }];
     setMessages(updatedMessages);
     setIsLoading(true);
 
     try {
-      // Historique pas encore condensé (ce qui suit `summarizedCount`)
       let currentSummary = summary;
       let currentSummarizedCount = summarizedCount;
       const notYetSummarized = updatedMessages.slice(currentSummarizedCount);
 
-      // Si ça dépasse le seuil, on condense tout sauf les derniers messages
-      // (qu'on garde bruts pour ne pas perdre le fil immédiat de l'échange).
       if (notYetSummarized.length > SUMMARY_TRIGGER) {
         const toArchive = notYetSummarized.slice(0, notYetSummarized.length - KEEP_RECENT);
         if (toArchive.length > 0) {
@@ -2195,8 +2333,6 @@ function AssistantPage() {
               setSummarizedCount(currentSummarizedCount);
             }
           } catch (summaryError) {
-            // Si le résumé échoue, on continue avec l'historique complet
-            // cette fois-ci plutôt que de bloquer la conversation.
             console.warn('Résumé de conversation impossible :', summaryError);
           }
         }
@@ -2206,6 +2342,7 @@ function AssistantPage() {
       const response = await sendToAssistant(windowMessages, currentSummary);
       let assistantContent = response.content;
       let action = response.action;
+      let questionnaire = response.questionnaire || null;
 
       if (action) {
         const context = {
@@ -2220,7 +2357,7 @@ function AssistantPage() {
 
       setMessages((prev) => [
         ...prev,
-        { role: 'assistant', content: assistantContent },
+        { role: 'assistant', content: assistantContent, questionnaire },
       ]);
     } catch (error) {
       console.error('Erreur assistant:', error);
@@ -2235,6 +2372,19 @@ function AssistantPage() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleSend = async () => {
+    if (!input.trim() || isLoading) return;
+    const userMsg = input.trim();
+    setInput('');
+    await sendUserMessage(userMsg);
+  };
+
+  const handleQuestionnaireSubmit = async (msgIndex, questionnaire, answers) => {
+    setMessages((prev) => prev.map((m, i) => (i === msgIndex ? { ...m, answers } : m)));
+    const formatted = formatQuestionnaireAnswers(questionnaire, answers);
+    await sendUserMessage(formatted);
   };
 
   const handleNewConversation = () => {

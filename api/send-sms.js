@@ -14,7 +14,6 @@
 // Voir /mnt/user-data/outputs/SMS-SETUP.md pour la procédure d'installation.
 
 export default async function handler(req, res) {
-  // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -36,7 +35,7 @@ export default async function handler(req, res) {
 
     const smsUsername = process.env.SMSGATE_USERNAME;
     const smsPassword = process.env.SMSGATE_PASSWORD;
-    const smsDeviceId = process.env.SMSGATE_DEVICE_ID; // optionnel
+    const smsDeviceId = process.env.SMSGATE_DEVICE_ID; 
 
     if (!smsUsername || !smsPassword) {
       console.error('Identifiants SMSGate manquants (SMSGATE_USERNAME / SMSGATE_PASSWORD)');
@@ -48,8 +47,6 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Numéro de téléphone invalide' });
     }
 
-    // Message borné en longueur pour éviter un envoi multi-segments coûteux
-    // par accident (une erreur de frappe, un texte trop long, etc.)
     const safeMessage = String(message).trim().slice(0, 480);
 
     const auth = Buffer.from(`${smsUsername}:${smsPassword}`).toString('base64');
@@ -84,9 +81,6 @@ export default async function handler(req, res) {
   }
 }
 
-// Convertit un numéro ivoirien saisi localement (ex: "07 12 34 56 78" ou
-// "0712345678") au format international E.164 (+225...) attendu par
-// l'API SMSGate. Accepte aussi un numéro déjà international.
 function normalizeToE164(rawPhone) {
   const trimmed = String(rawPhone).trim();
   if (trimmed.startsWith('+')) {

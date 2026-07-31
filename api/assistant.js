@@ -149,6 +149,15 @@ Si l'utilisateur pose une question qui n'a pas de rapport avec la santé, la pha
     }
 
     const data = await mistralResponse.json();
+   
+console.log('=== RÉPONSE BRUTE DE MISTRAL ===');
+console.log(JSON.stringify(data.outputs, null, 2));
+console.log('=== FIN RÉPONSE BRUTE ===');
+
+const rawContent = extractAssistantText(data.outputs);
+console.log('=== RAW CONTENT EXTRAIT ===');
+console.log(rawContent);
+console.log('=== FIN RAW CONTENT ===');
     const rawContent = extractAssistantText(data.outputs);
     const { content, questionnaire } = extractQuestionnaire(rawContent);
     const action = questionnaire ? null : parseAction(content);
@@ -185,27 +194,42 @@ function extractAssistantText(outputs) {
 
 const ALLOWED_QUESTION_TYPES = new Set(['text', 'radio', 'checkbox', 'scale']);
 
-function extractQuestionnaire(text) {
-  if (typeof text !== 'string') return { content: text, questionnaire: null };
+/* function extractQuestionnaire(text) {
+  console.log('🔍 extractQuestionnaire appelé avec:', text);
+  
+  if (typeof text !== 'string') {
+    console.warn('❌ text n\'est pas une chaîne');
+    return { content: text, questionnaire: null };
+  }
 
   const marker = 'QUESTIONNAIRE:';
   const markerIdx = text.indexOf(marker);
-  if (markerIdx === -1) return { content: text, questionnaire: null };
+  console.log(`🔍 Recherche du marqueur "${marker}" à l'index:`, markerIdx);
+  
+  if (markerIdx === -1) {
+    console.warn('❌ Marqueur non trouvé');
+    return { content: text, questionnaire: null };
+  }
 
-  // Prendre la partie après le marqueur
+  console.log('✅ Marqueur trouvé');
+
   const afterMarker = text.slice(markerIdx + marker.length).trim();
-  
-  // Trouver la première accolade ouvrante
-  const jsonStart = afterMarker.indexOf('{');
-  if (jsonStart === -1) return { content: text, questionnaire: null };
+  console.log('📄 Après le marqueur (premiers 200 caractères):', afterMarker.slice(0, 200));
 
-  // Extraire la sous-chaîne potentielle du JSON
+  const jsonStart = afterMarker.indexOf('{');
+  console.log('🔍 Position de la première accolade:', jsonStart);
+  
+  if (jsonStart === -1) {
+    console.warn('❌ Pas d\'accolade ouvrante');
+    return { content: text, questionnaire: null };
+  }
+
   let jsonCandidate = afterMarker.slice(jsonStart);
+  console.log('📦 Candidat JSON brut (premiers 200 caractères):', jsonCandidate.slice(0, 200));
   
-  // Nettoyer les caractères invisibles et les retours à la ligne
   jsonCandidate = jsonCandidate.replace(/[\r\n\t]/g, ' ').replace(/\s+/g, ' ');
-  
-  // Trouver l'accolade fermante correspondante
+  console.log('📦 Candidat JSON nettoyé (premiers 200 caractères):', jsonCandidate.slice(0, 200));
+
   let depth = 0;
   let jsonEnd = -1;
   for (let i = 0; i < jsonCandidate.length; i++) {
@@ -214,46 +238,143 @@ function extractQuestionnaire(text) {
     else if (ch === '}') {
       depth--;
       if (depth === 0) {
-        jsonEnd = i + 1; // inclure la }
+        jsonEnd = i + 1;
         break;
       }
     }
   }
-  if (jsonEnd === -1) return { content: text, questionnaire: null };
-
-  // Extraire le JSON
-  let jsonStr = jsonCandidate.slice(0, jsonEnd);
+  console.log('🔍 Profondeur finale:', depth, 'jsonEnd:', jsonEnd);
   
-  // Essayer de réparer les problèmes courants
+  if (jsonEnd === -1) {
+    console.warn('❌ Impossible de trouver l\'accolade fermante');
+    return { content: text, questionnaire: null };
+  }
+
+  let jsonStr = jsonCandidate.slice(0, jsonEnd);
+  console.log('📄 JSON extrait:', jsonStr);
+
+  // Nettoyage supplémentaire
   jsonStr = jsonStr
-    .replace(/([{,]\s*)(\w+)\s*:/g, '$1"$2":') // ajouter des guillemets autour des clés non stringifiées
-    .replace(/:\s*'([^']*)'/g, ':"$1"') // remplacer les guillemets simples par des doubles
-    .replace(/,\s*}/g, '}') // enlever les virgules en trop avant }
-    .replace(/,\s*]/g, ']'); // enlever les virgules en trop avant ]
+    .replace(/([{,]\s*)(\w+)\s*:/g, '$1"$2":')
+    .replace(/:\s*'([^']*)'/g, ':"$1"')
+    .replace(/,\s*}/g, '}')
+    .replace(/,\s*]/g, ']');
+  
+  console.log('📄 JSON après nettoyage:', jsonStr);
 
   let parsed;
   try {
     parsed = JSON.parse(jsonStr);
+    console.log('✅ JSON parsé avec succès:', parsed);
   } catch (e) {
-    console.warn('Échec du parsing JSON, tentative de récupération...', jsonStr);
+    console.warn('⚠️ Échec du parsing JSON:', e.message);
+    console.warn('⚠️ Tentative de récupération...');
     
-    // Tentative de récupération : remplacer les guillemets échappés
     try {
       const fixed = jsonStr.replace(/\\"/g, '"');
       parsed = JSON.parse(fixed);
+      console.log('✅ Récupération réussie:', parsed);
     } catch (e2) {
-      console.error('Échec définitif du parsing JSON :', jsonStr);
+      console.error('❌ Échec définitif du parsing:', e2.message);
+      console.error('❌ JSON incriminé:', jsonStr);
       return { content: text, questionnaire: null };
     }
   }
 
   const questionnaire = normalizeQuestionnaire(parsed);
-  if (!questionnaire) return { content: text, questionnaire: null };
+  console.log('📋 Questionnaire normalisé:', questionnaire);
+  
+  if (!questionnaire) {
+    console.warn('❌ Normalisation échouée');
+    return { content: text, questionnaire: null };
+  }
 
-  // Nettoyer le contenu : supprimer le marqueur et le JSON
   const beforeMarker = text.slice(0, markerIdx);
-  const afterJson = text.slice(markerIdx + marker.length + jsonStr.length + 1); // +1 pour l'espace
+  const afterJson = text.slice(markerIdx + marker.length + jsonStr.length + 1);
   const cleanedContent = (beforeMarker + afterJson).trim();
+  console.log('🧹 Contenu nettoyé:', cleanedContent);
+  
+  return { content: cleanedContent, questionnaire };
+} */
+
+  function extractQuestionnaire(text) {
+  console.log('🔍 extractQuestionnaire appelé avec:', text);
+  
+  if (typeof text !== 'string') {
+    console.warn('❌ text n\'est pas une chaîne');
+    return { content: text, questionnaire: null };
+  }
+
+  const marker = 'QUESTIONNAIRE:';
+  const markerIdx = text.indexOf(marker);
+  console.log(`🔍 Recherche du marqueur "${marker}" à l'index:`, markerIdx);
+  
+  if (markerIdx === -1) {
+    console.warn('❌ Marqueur non trouvé');
+    return { content: text, questionnaire: null };
+  }
+
+  console.log('✅ Marqueur trouvé');
+
+  // Utiliser une regex pour capturer tout ce qui ressemble à un JSON entre accolades
+  const jsonRegex = /QUESTIONNAIRE:\s*(\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})/s;
+  const match = text.match(jsonRegex);
+  
+  if (!match) {
+    console.warn('❌ Aucun JSON trouvé après le marqueur');
+    return { content: text, questionnaire: null };
+  }
+
+  let jsonStr = match[1].trim();
+  console.log('📄 JSON extrait par regex:', jsonStr);
+
+  // Nettoyage : retirer les sauts de ligne, les espaces inutiles
+  jsonStr = jsonStr.replace(/[\r\n\t]/g, ' ').replace(/\s+/g, ' ');
+  
+  // Réparer les guillemets et les virgules
+  jsonStr = jsonStr
+    .replace(/([{,]\s*)(\w+)\s*:/g, '$1"$2":')
+    .replace(/:\s*'([^']*)'/g, ':"$1"')
+    .replace(/,\s*}/g, '}')
+    .replace(/,\s*]/g, ']')
+    .replace(/\\"/g, '"'); // Remplacer les guillemets échappés
+
+  console.log('📄 JSON après nettoyage:', jsonStr);
+
+  let parsed;
+  try {
+    parsed = JSON.parse(jsonStr);
+    console.log('✅ JSON parsé avec succès:', parsed);
+  } catch (e) {
+    console.warn('⚠️ Échec du parsing JSON:', e.message);
+    console.warn('⚠️ Tentative de récupération...');
+    
+    // Dernière tentative : essayer de réparer manuellement
+    try {
+      // Remplacer les guillemets simples par des doubles
+      const fixed = jsonStr.replace(/'/g, '"');
+      parsed = JSON.parse(fixed);
+      console.log('✅ Récupération réussie (guillemets simples corrigés):', parsed);
+    } catch (e2) {
+      console.error('❌ Échec définitif du parsing:', e2.message);
+      console.error('❌ JSON incriminé:', jsonStr);
+      return { content: text, questionnaire: null };
+    }
+  }
+
+  const questionnaire = normalizeQuestionnaire(parsed);
+  console.log('📋 Questionnaire normalisé:', questionnaire);
+  
+  if (!questionnaire) {
+    console.warn('❌ Normalisation échouée');
+    return { content: text, questionnaire: null };
+  }
+
+  // Nettoyer le contenu original en supprimant le marqueur et le JSON
+  const beforeMarker = text.slice(0, markerIdx);
+  const afterJson = text.slice(markerIdx + marker.length + match[1].length);
+  const cleanedContent = (beforeMarker + afterJson).trim();
+  console.log('🧹 Contenu nettoyé:', cleanedContent);
   
   return { content: cleanedContent, questionnaire };
 }

@@ -2045,6 +2045,8 @@ function formatQuestionnaireAnswers(questionnaire, answers) {
 }
 
 function QuestionnaireForm({ questionnaire, answers, onSubmit, dark, disabled }) {
+    console.log('🧩 QuestionnaireForm rendu avec :', { questionnaire, answers });
+
   const isAnswered = !!answers;
 
   const initialValues = useMemo(() => {
@@ -2231,8 +2233,8 @@ function AssistantPage() {
   const [summarizedCount, setSummarizedCount] = useState(
     () => parseInt(localStorage.getItem('vignon_chat_summarized_count') || '0', 10)
   );
-  const SUMMARY_TRIGGER = 12; 
-  const KEEP_RECENT = 6; 
+  const SUMMARY_TRIGGER = 12;
+  const KEEP_RECENT = 6;
 
   const chatContainerRef = useRef(null);
   const inputRef = useRef(null);
@@ -2340,6 +2342,12 @@ function AssistantPage() {
 
       const windowMessages = updatedMessages.slice(currentSummarizedCount);
       const response = await sendToAssistant(windowMessages, currentSummary);
+
+      // LOGS FRONT
+      console.log('📨 [FRONT] Réponse brute de l\'API :', response);
+      console.log('📋 [FRONT] Questionnaire reçu ?', response.questionnaire);
+      console.log('📝 [FRONT] Contenu du message :', response.content);
+
       let assistantContent = response.content;
       let action = response.action;
       let questionnaire = response.questionnaire || null;
@@ -2382,6 +2390,8 @@ function AssistantPage() {
   };
 
   const handleQuestionnaireSubmit = async (msgIndex, questionnaire, answers) => {
+    console.log('📤 Soumission des réponses pour le message', msgIndex);
+    console.log('📤 Réponses :', answers);
     setMessages((prev) => prev.map((m, i) => (i === msgIndex ? { ...m, answers } : m)));
     const formatted = formatQuestionnaireAnswers(questionnaire, answers);
     await sendUserMessage(formatted);
@@ -2426,23 +2436,48 @@ function AssistantPage() {
         className={`flex-1 overflow-y-auto rounded-xl p-4 space-y-4 ${dark ? 'bg-[#0F2E29] border border-white/10' : 'bg-white border border-gray-200'}`}
         style={{ minHeight: '300px' }}
       >
-        {messages.map((msg, idx) => (
-          <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div
-              className={`max-w-[85%] sm:max-w-[75%] px-4 py-2.5 rounded-2xl ${
-                msg.role === 'user'
-                  ? dark
-                    ? 'bg-teal-700 text-white'
-                    : 'bg-teal-500 text-white'
-                  : dark
-                  ? 'bg-gray-700 text-gray-200'
-                  : 'bg-gray-100 text-gray-800'
-              }`}
-            >
-              <ChatMarkdown content={msg.content} dark={dark} isUser={msg.role === 'user'} />
+        {messages.map((msg, idx) => {
+          // LOG : vérification du questionnaire pour chaque message
+          console.log(`🔍 Message ${idx} :`, {
+            role: msg.role,
+            hasQuestionnaire: !!msg.questionnaire,
+            content: msg.content.substring(0, 50),
+          });
+
+          return (
+            <div key={idx}>
+              <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div
+                  className={`max-w-[85%] sm:max-w-[75%] px-4 py-2.5 rounded-2xl ${
+                    msg.role === 'user'
+                      ? dark
+                        ? 'bg-teal-700 text-white'
+                        : 'bg-teal-500 text-white'
+                      : dark
+                      ? 'bg-gray-700 text-gray-200'
+                      : 'bg-gray-100 text-gray-800'
+                  }`}
+                >
+                  <ChatMarkdown content={msg.content} dark={dark} isUser={msg.role === 'user'} />
+                </div>
+              </div>
+              {/* Affichage du formulaire questionnaire si présent */}
+              {msg.questionnaire && (
+                <div className="flex justify-start mt-1">
+                  <div className="max-w-[85%] sm:max-w-[75%]">
+                    <QuestionnaireForm
+                      questionnaire={msg.questionnaire}
+                      answers={msg.answers}
+                      onSubmit={(answers) => handleQuestionnaireSubmit(idx, msg.questionnaire, answers)}
+                      dark={dark}
+                      disabled={isLoading}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
         {isLoading && (
           <div className="flex justify-start">
             <div className={`px-4 py-2 rounded-2xl ${dark ? 'bg-gray-700' : 'bg-gray-100'}`}>

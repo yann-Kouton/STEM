@@ -2241,7 +2241,7 @@ function AssistantPage() {
     if (messages.length > 1 && !confirm('Voulez-vous vraiment effacer cette conversation ?')) return;
     const welcomeMessage = {
       role: 'assistant',
-      content: `Bonjour${pharmacienName ? ` ${pharmacienName}` : ''}, je suis Vignon, votre assistant médical. Je peux rechercher des patients et afficher leurs fiches, et répondre à vos questions générales — au besoin en cherchant sur internet des informations à jour. Que puis-je faire pour vous ?`,
+      content: `Bonjour Dr. ${pharmacienName ? ` ${pharmacienName}` : ''}, je suis Vignon, votre assistant médical. Je peux rechercher des patients et afficher leurs fiches, et répondre à vos questions générales — au besoin en cherchant sur internet des informations à jour. Que puis-je faire pour vous ?`,
     };
     setMessages([welcomeMessage]);
     localStorage.setItem('vignon_chat_messages', JSON.stringify([welcomeMessage]));

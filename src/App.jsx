@@ -257,7 +257,7 @@ function LoginPage() {
           createdAt: serverTimestamp()
         });
         await sendEmailVerification(user);
-        setSuccess('Un email de vérification vous a été envoyé. Veuillez le confirmer avant de vous connecter.');
+        setSuccess('Un email de vérification vous a été envoyé. Veuillez le confirmer avant de vous connecter. Verifiez vos spam si jamais vous ne le voyez pas.');
         setNom('');
         setPrenom('');
         setEmail('');

@@ -280,14 +280,28 @@ function LoginPage() {
   };
 
   const handleGoogle = async () => {
-    setError('');
-    try {
-      await loginWithGoogle();
-      navigate('/dashboard');
-    } catch (err) {
-      setError(err.message);
-    }
-  };
+  setError('');
+  try {
+    const result = await loginWithGoogle();
+    const user = result.user;
+    // Extraire prénom et nom depuis displayName
+    const fullName = user.displayName || '';
+    const nameParts = fullName.split(' ');
+    const prenom = nameParts[0] || '';
+    const nom = nameParts.slice(1).join(' ') || '';
+    // Créer le document pharmacien s'il n'existe pas
+    await setDoc(doc(db, 'pharmaciens', user.uid), {
+      nom,
+      prenom,
+      email: user.email,
+      displayName: fullName,
+      createdAt: serverTimestamp()
+    }, { merge: true }); // merge: true pour ne pas écraser si déjà existant
+    navigate('/dashboard');
+  } catch (err) {
+    setError(err.message);
+  }
+};
 
   const handleResetPassword = async (e) => {
     e.preventDefault();

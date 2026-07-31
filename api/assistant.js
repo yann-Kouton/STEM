@@ -149,16 +149,16 @@ Si l'utilisateur pose une question qui n'a pas de rapport avec la santé, la pha
     }
 
     const data = await mistralResponse.json();
-   
-console.log('=== RÉPONSE BRUTE DE MISTRAL ===');
-console.log(JSON.stringify(data.outputs, null, 2));
-console.log('=== FIN RÉPONSE BRUTE ===');
 
-const rawContent = extractAssistantText(data.outputs);
-console.log('=== RAW CONTENT EXTRAIT ===');
-console.log(rawContent);
-console.log('=== FIN RAW CONTENT ===');
+    console.log('=== RÉPONSE BRUTE DE MISTRAL ===');
+    console.log(JSON.stringify(data.outputs, null, 2));
+    console.log('=== FIN RÉPONSE BRUTE ===');
+
     const rawContent = extractAssistantText(data.outputs);
+    console.log('=== RAW CONTENT EXTRAIT ===');
+    console.log(rawContent);
+    console.log('=== FIN RAW CONTENT ===');
+
     const { content, questionnaire } = extractQuestionnaire(rawContent);
     const action = questionnaire ? null : parseAction(content);
 
@@ -168,7 +168,6 @@ console.log('=== FIN RAW CONTENT ===');
     res.status(500).json({ error: 'Erreur lors de la requête à Mistral' });
   }
 }
-
 
 function extractAssistantText(outputs) {
   if (!Array.isArray(outputs)) return '';
@@ -194,110 +193,7 @@ function extractAssistantText(outputs) {
 
 const ALLOWED_QUESTION_TYPES = new Set(['text', 'radio', 'checkbox', 'scale']);
 
-/* function extractQuestionnaire(text) {
-  console.log('🔍 extractQuestionnaire appelé avec:', text);
-  
-  if (typeof text !== 'string') {
-    console.warn('❌ text n\'est pas une chaîne');
-    return { content: text, questionnaire: null };
-  }
-
-  const marker = 'QUESTIONNAIRE:';
-  const markerIdx = text.indexOf(marker);
-  console.log(`🔍 Recherche du marqueur "${marker}" à l'index:`, markerIdx);
-  
-  if (markerIdx === -1) {
-    console.warn('❌ Marqueur non trouvé');
-    return { content: text, questionnaire: null };
-  }
-
-  console.log('✅ Marqueur trouvé');
-
-  const afterMarker = text.slice(markerIdx + marker.length).trim();
-  console.log('📄 Après le marqueur (premiers 200 caractères):', afterMarker.slice(0, 200));
-
-  const jsonStart = afterMarker.indexOf('{');
-  console.log('🔍 Position de la première accolade:', jsonStart);
-  
-  if (jsonStart === -1) {
-    console.warn('❌ Pas d\'accolade ouvrante');
-    return { content: text, questionnaire: null };
-  }
-
-  let jsonCandidate = afterMarker.slice(jsonStart);
-  console.log('📦 Candidat JSON brut (premiers 200 caractères):', jsonCandidate.slice(0, 200));
-  
-  jsonCandidate = jsonCandidate.replace(/[\r\n\t]/g, ' ').replace(/\s+/g, ' ');
-  console.log('📦 Candidat JSON nettoyé (premiers 200 caractères):', jsonCandidate.slice(0, 200));
-
-  let depth = 0;
-  let jsonEnd = -1;
-  for (let i = 0; i < jsonCandidate.length; i++) {
-    const ch = jsonCandidate[i];
-    if (ch === '{') depth++;
-    else if (ch === '}') {
-      depth--;
-      if (depth === 0) {
-        jsonEnd = i + 1;
-        break;
-      }
-    }
-  }
-  console.log('🔍 Profondeur finale:', depth, 'jsonEnd:', jsonEnd);
-  
-  if (jsonEnd === -1) {
-    console.warn('❌ Impossible de trouver l\'accolade fermante');
-    return { content: text, questionnaire: null };
-  }
-
-  let jsonStr = jsonCandidate.slice(0, jsonEnd);
-  console.log('📄 JSON extrait:', jsonStr);
-
-  // Nettoyage supplémentaire
-  jsonStr = jsonStr
-    .replace(/([{,]\s*)(\w+)\s*:/g, '$1"$2":')
-    .replace(/:\s*'([^']*)'/g, ':"$1"')
-    .replace(/,\s*}/g, '}')
-    .replace(/,\s*]/g, ']');
-  
-  console.log('📄 JSON après nettoyage:', jsonStr);
-
-  let parsed;
-  try {
-    parsed = JSON.parse(jsonStr);
-    console.log('✅ JSON parsé avec succès:', parsed);
-  } catch (e) {
-    console.warn('⚠️ Échec du parsing JSON:', e.message);
-    console.warn('⚠️ Tentative de récupération...');
-    
-    try {
-      const fixed = jsonStr.replace(/\\"/g, '"');
-      parsed = JSON.parse(fixed);
-      console.log('✅ Récupération réussie:', parsed);
-    } catch (e2) {
-      console.error('❌ Échec définitif du parsing:', e2.message);
-      console.error('❌ JSON incriminé:', jsonStr);
-      return { content: text, questionnaire: null };
-    }
-  }
-
-  const questionnaire = normalizeQuestionnaire(parsed);
-  console.log('📋 Questionnaire normalisé:', questionnaire);
-  
-  if (!questionnaire) {
-    console.warn('❌ Normalisation échouée');
-    return { content: text, questionnaire: null };
-  }
-
-  const beforeMarker = text.slice(0, markerIdx);
-  const afterJson = text.slice(markerIdx + marker.length + jsonStr.length + 1);
-  const cleanedContent = (beforeMarker + afterJson).trim();
-  console.log('🧹 Contenu nettoyé:', cleanedContent);
-  
-  return { content: cleanedContent, questionnaire };
-} */
-
-  function extractQuestionnaire(text) {
+function extractQuestionnaire(text) {
   console.log('🔍 extractQuestionnaire appelé avec:', text);
   
   if (typeof text !== 'string') {

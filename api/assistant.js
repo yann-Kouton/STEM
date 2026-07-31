@@ -83,7 +83,7 @@ Règles impératives :
       typeof displayName === 'string' ? displayName.trim().slice(0, 60).replace(/[\r\n]+/g, ' ') : '';
 
     const personalization = safeUserName
-      ? `\n\nL'utilisateur actuellement connecté s'appelle ${safeUserName} (pharmacien de l'officine). Adressez-vous à lui par son prénom de façon naturelle (par exemple en le saluant ou ponctuellement dans vos réponses), sans le répéter systématiquement à chaque message pour ne pas être lourd.`
+      ? `\n\nL'utilisateur actuellement connecté s'appelle ${safeUserName} (pharmacien de l'officine). Adressez-vous à lui par son Nom et prenom précédé de Dr. de façon naturelle (par exemple en le saluant ou ponctuellement dans vos réponses), sans le répéter systématiquement à chaque message pour ne pas être lourd.`
       : '';
 
     // Résumé condensé du début de la conversation, généré côté client via le

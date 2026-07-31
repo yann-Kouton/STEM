@@ -163,6 +163,23 @@ function normalizePhoneForWhatsApp(telephone) {
   return clean;
 }
 
+// === Gestion des statuts de rendez-vous ===
+const RDV_STATUTS = ['Prévu', 'Effectué', 'Manqué', 'Annulé'];
+function rdvStatutStyle(statut) {
+  switch (statut) {
+    case 'Effectué': return { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200' };
+    case 'Manqué': return { bg: 'bg-red-50', text: 'text-red-600', border: 'border-red-200' };
+    case 'Annulé': return { bg: 'bg-gray-100', text: 'text-gray-500', border: 'border-gray-200' };
+    default: return { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200' }; // Prévu
+  }
+}
+// Retourne le prochain RDV "Prévu" le plus proche (peut être en retard) parmi la liste de RDV d'un patient
+function nextRendezVous(rendezVous) {
+  const prevus = (rendezVous || []).filter((r) => r.statut === 'Prévu' && r.date);
+  if (prevus.length === 0) return null;
+  return [...prevus].sort((a, b) => toDate(a.date) - toDate(b.date))[0];
+}
+
 // Fonction de calcul d'âge
 function calculAge(dateNaissance) {
   if (!dateNaissance) return null;
@@ -747,7 +764,7 @@ function DashboardPage() {
   );
 }
 
-function PatientDetailDrawer({ patient, onClose, dark, onEditConstante, onDeleteConstante }) {
+function PatientDetailDrawer({ patient, onClose, dark, onEditConstante, onDeleteConstante, onAddRdv, onEditRdv, onDeleteRdv, onSetRdvStatut }) {
   const historique = [...(patient.historique || [])].sort((a, b) => toDate(b.date) - toDate(a.date));
   const age = calculAge(patient.dateNaissance);
 
@@ -835,12 +852,10 @@ function PatientDetailDrawer({ patient, onClose, dark, onEditConstante, onDelete
             <div className="col-span-2"><dt className={`${dark ? 'text-white/40' : 'text-gray-500'}`}>Remarques</dt><dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.notes || '—'}</dd></div>
           </dl>
         </div>
-        <div className="grid grid-cols-2 gap-4">
-          <div><dt className={`text-sm ${dark ? 'text-white/40' : 'text-gray-500'}`}>Prochain RDV</dt><dd className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.dateRenouvellement ? formatDate(patient.dateRenouvellement) : '—'}</dd></div>
-          {patient.ordonnanceUrl && (
-            <div><dt className={`text-sm ${dark ? 'text-white/40' : 'text-gray-500'}`}>Ordonnance (fiche)</dt><dd><a href={patient.ordonnanceUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-teal-600 hover:underline flex items-center gap-1"><PhotoIcon className="h-4 w-4" /> Voir l'image</a></dd></div>
-          )}
-        </div>
+        {patient.ordonnanceUrl && (
+          <div><dt className={`text-sm ${dark ? 'text-white/40' : 'text-gray-500'}`}>Ordonnance (fiche)</dt><dd><a href={patient.ordonnanceUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-teal-600 hover:underline flex items-center gap-1"><PhotoIcon className="h-4 w-4" /> Voir l'image</a></dd></div>
+        )}
+        <RendezVousSection patient={patient} dark={dark} onAddRdv={onAddRdv} onEditRdv={onEditRdv} onDeleteRdv={onDeleteRdv} onSetStatut={onSetRdvStatut} />
         <PatientVitalsSection patient={patient} dark={dark} onEditConstante={onEditConstante} onDeleteConstante={onDeleteConstante} />
         <div>
           <h4 className={`text-sm font-semibold uppercase tracking-wider ${dark ? 'text-white/40' : 'text-gray-500'} border-b pb-1`}>
@@ -1164,6 +1179,142 @@ function ConstanteModal({ patient, initialData, onClose, onSave, onDelete }) {
   );
 }
 
+// Modal d'ajout / modification d'un rendez-vous
+function RendezVousModal({ patient, initialData, onClose, onSave, onDelete }) {
+  const isEditing = !!initialData;
+  const [date, setDate] = useState(initialData ? toDate(initialData.date).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10));
+  const [motif, setMotif] = useState(initialData?.motif ?? '');
+  const [statut, setStatut] = useState(initialData?.statut ?? 'Prévu');
+  const [notes, setNotes] = useState(initialData?.notes ?? '');
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    await onSave({
+      date: new Date(date).toISOString(),
+      motif: capitalizeSentences(motif),
+      statut,
+      notes: capitalizeSentences(notes),
+    });
+    setSaving(false);
+  };
+
+  const handleDeleteClick = async () => {
+    setDeleting(true);
+    await onDelete();
+    setDeleting(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+      <motion.form initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} onSubmit={submit} className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+        <div className="flex justify-between items-center">
+          <h3 className="font-display text-lg text-gray-800">{isEditing ? 'Modifier le rendez-vous' : 'Nouveau rendez-vous'} — {patient.prenom} {patient.nom}</h3>
+          <button type="button" onClick={onClose}><XMarkIcon className="h-5 w-5 text-gray-400" /></button>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Date du rendez-vous</label>
+          <input
+            type="date" value={date} onChange={(e) => setDate(e.target.value)} required
+            className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Motif</label>
+          <input
+            type="text" value={motif} onChange={(e) => setMotif(e.target.value)}
+            className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none"
+            placeholder="ex : Renouvellement traitement chronique"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Statut</label>
+          <select value={statut} onChange={(e) => setStatut(e.target.value)} className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none bg-white">
+            {RDV_STATUTS.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Remarques</label>
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows="2" className="w-full mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" />
+        </div>
+        <div className="flex gap-3">
+          <button disabled={saving || deleting} type="submit" className="flex-1 text-white font-semibold py-2.5 rounded-lg" style={{ background: C.teal }}>{saving ? 'Enregistrement...' : isEditing ? 'Mettre à jour' : 'Enregistrer le rendez-vous'}</button>
+          {isEditing && onDelete && (
+            <button type="button" disabled={saving || deleting} onClick={handleDeleteClick} className="px-4 py-2.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 transition-colors font-medium text-sm">
+              {deleting ? 'Suppression...' : 'Supprimer'}
+            </button>
+          )}
+        </div>
+      </motion.form>
+    </div>
+  );
+}
+
+// Section "Rendez-vous" affichée dans la fiche patient : liste + changement de statut rapide
+function RendezVousSection({ patient, dark, onAddRdv, onEditRdv, onDeleteRdv, onSetStatut }) {
+  const rendezVous = [...(patient.rendezVous || [])]
+    .map((r, idx) => ({ ...r, _origIndex: idx }))
+    .sort((a, b) => toDate(b.date) - toDate(a.date));
+  const canManage = !!(onAddRdv || onEditRdv || onDeleteRdv || onSetStatut);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between border-b pb-1">
+        <h4 className={`text-sm font-semibold uppercase tracking-wider ${dark ? 'text-white/40' : 'text-gray-500'}`}>
+          Rendez-vous ({rendezVous.length})
+        </h4>
+        {onAddRdv && (
+          <button type="button" onClick={() => onAddRdv(patient)} className="text-xs font-medium hover:underline" style={{ color: C.teal }}>+ Nouveau RDV</button>
+        )}
+      </div>
+      {rendezVous.length === 0 ? (
+        <p className={`text-sm mt-3 ${dark ? 'text-white/40' : 'text-gray-400'}`}>Aucun rendez-vous enregistré.</p>
+      ) : (
+        <div className="mt-3 space-y-2">
+          {rendezVous.map((r) => {
+            const style = rdvStatutStyle(r.statut);
+            const d = daysUntil(r.date);
+            return (
+              <div key={r._origIndex} className={`p-3 rounded-xl border ${style.border} ${dark ? 'bg-white/5' : style.bg}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className={`text-sm font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{formatDate(r.date)}</p>
+                    {r.motif && <p className={`text-sm mt-0.5 ${dark ? 'text-white/70' : 'text-gray-600'}`}>{r.motif}</p>}
+                    {r.notes && <p className={`text-xs mt-1 ${dark ? 'text-white/40' : 'text-gray-400'}`}>{r.notes}</p>}
+                    {r.statut === 'Prévu' && d !== null && (
+                      <p className={`text-xs mt-1 font-mono ${d < 0 ? 'text-red-500' : 'text-amber-600'}`}>{d < 0 ? `en retard de ${Math.abs(d)}j` : d === 0 ? "aujourd'hui" : `dans ${d}j`}</p>
+                    )}
+                  </div>
+                  <span className={`text-xs font-medium px-2 py-1 rounded-lg whitespace-nowrap ${style.bg} ${style.text}`}>{r.statut}</span>
+                </div>
+                {canManage && (
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {onSetStatut && r.statut === 'Prévu' && (
+                      <>
+                        <button type="button" onClick={() => onSetStatut(patient, r._origIndex, 'Effectué')} className="text-xs font-medium px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors">Marquer effectué</button>
+                        <button type="button" onClick={() => onSetStatut(patient, r._origIndex, 'Manqué')} className="text-xs font-medium px-2 py-1 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-colors">Marquer manqué</button>
+                        <button type="button" onClick={() => onSetStatut(patient, r._origIndex, 'Annulé')} className="text-xs font-medium px-2 py-1 rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors">Annuler</button>
+                      </>
+                    )}
+                    {onEditRdv && (
+                      <button type="button" onClick={() => onEditRdv(patient, r._origIndex)} className={`text-xs font-medium px-2 py-1 rounded-lg border transition-colors ${dark ? 'border-white/20 text-white/70 hover:bg-white/10' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}>Modifier</button>
+                    )}
+                    {onDeleteRdv && (
+                      <button type="button" onClick={() => onDeleteRdv(patient, r._origIndex)} className="text-xs font-medium px-2 py-1 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 transition-colors">Supprimer</button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PatientsPage() {
   const { user } = useAuth();
   const { dark } = useUIStore();
@@ -1188,9 +1339,11 @@ function PatientsPage() {
     pathologieChronique: '', traitementChronique: [''],
     tabagisme: 'NON', alcool: 'NON', cafe: 'NON', regimeParticulier: 'NON', regimePrecision: '',
     activitePhysique: 'NON', activitePrecision: '', metier: '',
-    dateRenouvellement: '', notes: ''
+    notes: ''
   });
   const [isUploading, setIsUploading] = useState(false);
+  const [rdvPatient, setRdvPatient] = useState(null);
+  const [editingRdvIndex, setEditingRdvIndex] = useState(null);
   const searchInputRef = useRef(null);
 
   useEffect(() => {
@@ -1235,7 +1388,7 @@ function PatientsPage() {
       pathologieChronique: '', traitementChronique: [''],
       tabagisme: 'NON', alcool: 'NON', cafe: 'NON', regimeParticulier: 'NON', regimePrecision: '',
       activitePhysique: 'NON', activitePrecision: '', metier: '',
-      dateRenouvellement: '', notes: ''
+      notes: ''
     });
     setEditingPatient(null);
     setIsModalOpen(false);
@@ -1263,10 +1416,31 @@ function PatientsPage() {
       regimeParticulier: patient.regimeParticulier || 'NON', regimePrecision: patient.regimePrecision || '',
       activitePhysique: patient.activitePhysique || 'NON', activitePrecision: patient.activitePrecision || '',
       metier: patient.metier || '',
-      dateRenouvellement: patient.dateRenouvellement ? toDate(patient.dateRenouvellement).toISOString().slice(0, 10) : '',
       notes: patient.notes || ''
     });
     setIsModalOpen(true);
+  };
+
+  // Envoi (silencieux, non bloquant) du SMS de bienvenue via l'API SMSGate
+  // dès qu'un nouveau patient est enregistré. N'empêche jamais la création
+  // du patient de réussir si le SMS échoue (ex : passerelle SMSGate hors
+  // ligne) : on prévient juste discrètement le pharmacien dans ce cas.
+  const sendWelcomeSms = (patientData) => {
+    if (!patientData.contact1) return;
+    const apiUrl = import.meta.env.DEV ? 'http://localhost:3000/api/send-sms' : '/api/send-sms';
+    fetch(apiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        phone: patientData.contact1,
+        message: `Bonjour ${patientData.prenom}, bienvenue à la Pharmacie Sainte Marie Majeure ! Votre dossier a bien été créé. N'hésitez pas à nous contacter pour toute question. Bonne santé !`,
+      }),
+    })
+      .then((res) => { if (!res.ok) throw new Error('SMS non envoyé'); })
+      .catch((err) => {
+        console.warn('Envoi du SMS de bienvenue impossible :', err.message);
+        push('Patient enregistré, mais le SMS de bienvenue n\'a pas pu être envoyé', 'error');
+      });
   };
 
   const handleSubmit = async (e) => {
@@ -1292,7 +1466,6 @@ function PatientsPage() {
         regimeParticulier: formData.regimeParticulier, regimePrecision: formData.regimePrecision,
         activitePhysique: formData.activitePhysique, activitePrecision: formData.activitePrecision,
         metier: formData.metier,
-        dateRenouvellement: formData.dateRenouvellement ? new Date(formData.dateRenouvellement).toISOString() : null,
         notes: formData.notes,
         pharmacienId: user.uid, updatedAt: serverTimestamp()
       };
@@ -1300,8 +1473,9 @@ function PatientsPage() {
         await updateDoc(doc(db, 'patients', editingPatient.id), patientData);
         push('Patient mis à jour', 'success');
       } else {
-        await addDoc(collection(db, 'patients'), { ...patientData, historique: [], constantes: [], createdAt: serverTimestamp() });
+        await addDoc(collection(db, 'patients'), { ...patientData, historique: [], constantes: [], rendezVous: [], createdAt: serverTimestamp() });
         push('Patient ajouté', 'success');
+        sendWelcomeSms(patientData);
       }
       resetForm();
     } catch (err) {
@@ -1376,6 +1550,63 @@ function PatientsPage() {
     }
   };
 
+  const saveRdv = async (rdv) => {
+    try {
+      if (editingRdvIndex != null) {
+        const freshPatient = patients.find(p => p.id === rdvPatient.id) || rdvPatient;
+        const newRdv = [...(freshPatient.rendezVous || [])];
+        newRdv[editingRdvIndex] = rdv;
+        await updateDoc(doc(db, 'patients', rdvPatient.id), {
+          rendezVous: newRdv, updatedAt: serverTimestamp()
+        });
+        push('Rendez-vous mis à jour', 'success');
+      } else {
+        await updateDoc(doc(db, 'patients', rdvPatient.id), {
+          rendezVous: arrayUnion(rdv), updatedAt: serverTimestamp()
+        });
+        push('Rendez-vous enregistré', 'success');
+      }
+      setRdvPatient(null);
+      setEditingRdvIndex(null);
+    } catch (err) {
+      push('Erreur : ' + err.message, 'error');
+    }
+  };
+
+  const openAddRdv = (patient) => { setRdvPatient(patient); setEditingRdvIndex(null); };
+  const openEditRdv = (patient, idx) => { setRdvPatient(patient); setEditingRdvIndex(idx); };
+  const closeRdvModal = () => { setRdvPatient(null); setEditingRdvIndex(null); };
+
+  const deleteRdv = async (patient, idx) => {
+    if (!confirm('Supprimer ce rendez-vous ?')) return false;
+    try {
+      const freshPatient = patients.find(p => p.id === patient.id) || patient;
+      const newRdv = (freshPatient.rendezVous || []).filter((_, i) => i !== idx);
+      await updateDoc(doc(db, 'patients', patient.id), {
+        rendezVous: newRdv, updatedAt: serverTimestamp()
+      });
+      push('Rendez-vous supprimé', 'success');
+      return true;
+    } catch (err) {
+      push('Erreur : ' + err.message, 'error');
+      return false;
+    }
+  };
+
+  const setRdvStatut = async (patient, idx, statut) => {
+    try {
+      const freshPatient = patients.find(p => p.id === patient.id) || patient;
+      const newRdv = [...(freshPatient.rendezVous || [])];
+      newRdv[idx] = { ...newRdv[idx], statut };
+      await updateDoc(doc(db, 'patients', patient.id), {
+        rendezVous: newRdv, updatedAt: serverTimestamp()
+      });
+      push(`Rendez-vous marqué « ${statut} »`, 'success');
+    } catch (err) {
+      push('Erreur : ' + err.message, 'error');
+    }
+  };
+
   const handleCall = (telephone) => { if (!telephone) return; window.location.href = `tel:${telephone}`; };
   const handleSms = (telephone, prenom) => { if (!telephone) return; const msg = encodeURIComponent(`Bonjour ${prenom}, la Pharmacie Sainte Marie Majeure vous contacte.`); window.location.href = `sms:${telephone}?body=${msg}`; };
   const sendReminder = (patient) => {
@@ -1406,7 +1637,8 @@ function PatientsPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredPatients.map((patient) => {
-            const renouvJours = daysUntil(patient.dateRenouvellement);
+            const prochainRdv = nextRendezVous(patient.rendezVous);
+            const renouvJours = prochainRdv ? daysUntil(prochainRdv.date) : null;
             const renouvUrgent = renouvJours !== null && renouvJours <= 7;
             const contact = patient.contact1 || patient.telephone;
             return (
@@ -1425,9 +1657,16 @@ function PatientsPage() {
                     <button onClick={() => handleDelete(patient.id)} className="p-1.5 text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50 transition-colors" title="Supprimer"><TrashIcon className="h-5 w-5" /></button>
                   </div>
                 </div>
-                {renouvJours !== null && <div className={`mt-2 text-xs px-2 py-1 rounded-lg inline-flex items-center gap-1 ${renouvUrgent ? 'bg-amber-50 text-amber-700' : (dark ? 'text-white/40' : 'text-gray-400')}`}><CalendarDaysIcon className="h-3.5 w-3.5" />{renouvJours < 0 ? `RDV en retard de ${Math.abs(renouvJours)}j` : `RDV dans ${renouvJours}j`}</div>}
+                {prochainRdv && (
+                  <div className={`mt-2 flex flex-wrap items-center gap-2 text-xs px-2 py-1.5 rounded-lg ${renouvUrgent ? 'bg-amber-50 text-amber-700' : (dark ? 'text-white/40' : 'text-gray-400')}`}>
+                    <span className="flex items-center gap-1"><CalendarDaysIcon className="h-3.5 w-3.5" />{renouvJours < 0 ? `RDV en retard de ${Math.abs(renouvJours)}j` : renouvJours === 0 ? "RDV aujourd'hui" : `RDV dans ${renouvJours}j`}{prochainRdv.motif ? ` — ${prochainRdv.motif}` : ''}</span>
+                    <button onClick={() => setRdvStatut(patient, patient.rendezVous.indexOf(prochainRdv), 'Effectué')} className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-colors">Effectué</button>
+                    <button onClick={() => setRdvStatut(patient, patient.rendezVous.indexOf(prochainRdv), 'Manqué')} className="px-1.5 py-0.5 rounded bg-red-100 text-red-600 hover:bg-red-200 transition-colors">Manqué</button>
+                  </div>
+                )}
                 <div className="flex flex-wrap gap-1 mt-3">
                   <button onClick={() => setVisitPatient(patient)} className="flex-1 text-xs font-medium py-1.5 rounded-lg border transition-colors" style={{ borderColor: C.teal + '55', color: C.teal }}>+ Consultation</button>
+                  <button onClick={() => openAddRdv(patient)} className="flex-1 text-xs font-medium py-1.5 rounded-lg border transition-colors" style={{ borderColor: C.amber + '55', color: C.amber }}>+ RDV</button>
                   <button onClick={() => openAddConstante(patient)} className="flex-1 text-xs font-medium py-1.5 rounded-lg border transition-colors" style={{ borderColor: C.sage + '55', color: C.sage }}>+ Constante</button>
                   {contact && (
                     <>
@@ -1443,10 +1682,31 @@ function PatientsPage() {
         </div>
       )}
       <AnimatePresence>
-        {detailPatient && <PatientDetailDrawer patient={patients.find(p => p.id === detailPatient.id) || detailPatient} onClose={() => setDetailPatient(null)} dark={dark} onEditConstante={openEditConstante} onDeleteConstante={deleteConstante} />}
+        {detailPatient && (
+          <PatientDetailDrawer
+            patient={patients.find(p => p.id === detailPatient.id) || detailPatient}
+            onClose={() => setDetailPatient(null)}
+            dark={dark}
+            onEditConstante={openEditConstante}
+            onDeleteConstante={deleteConstante}
+            onAddRdv={openAddRdv}
+            onEditRdv={openEditRdv}
+            onDeleteRdv={(patient, idx) => deleteRdv(patient, idx)}
+            onSetRdvStatut={setRdvStatut}
+          />
+        )}
       </AnimatePresence>
       {detailPatient && <div className="fixed inset-0 bg-black/30 z-40" onClick={() => setDetailPatient(null)} />}
       {visitPatient && <VisitModal patient={visitPatient} onClose={() => setVisitPatient(null)} onSave={saveVisit} />}
+      {rdvPatient && (
+        <RendezVousModal
+          patient={rdvPatient}
+          initialData={editingRdvIndex != null ? (patients.find(p => p.id === rdvPatient.id) || rdvPatient).rendezVous?.[editingRdvIndex] : null}
+          onClose={closeRdvModal}
+          onSave={saveRdv}
+          onDelete={editingRdvIndex != null ? async () => { const ok = await deleteRdv(rdvPatient, editingRdvIndex); if (ok) closeRdvModal(); } : null}
+        />
+      )}
       {constantePatient && (
         <ConstanteModal
           patient={constantePatient}
@@ -1654,10 +1914,8 @@ function PatientsPage() {
                   />
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Prochain RDV</label>
-                <input type="date" name="dateRenouvellement" value={formData.dateRenouvellement} onChange={handleRadioChange} className="w-full sm:w-1/2 mt-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 outline-none" />
-                <p className="text-xs text-gray-400 mt-1">Un rappel apparaîtra 7 jours avant cette date. L'ordonnance s'ajoute désormais lors de chaque consultation.</p>
+              <div className="text-xs text-gray-400 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                Les rendez-vous (planification, statut effectué/manqué/annulé) se gèrent désormais depuis la fiche détail du patient, bouton « + Nouveau RDV ». L'ordonnance s'ajoute lors de chaque consultation.
               </div>
               {isUploading && <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden"><motion.div initial={{ width: '10%' }} animate={{ width: '90%' }} transition={{ duration: 1.2 }} className="h-2.5 rounded-full" style={{ background: C.teal }} /></div>}
               <div className="flex gap-3 pt-2">

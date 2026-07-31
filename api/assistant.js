@@ -105,16 +105,22 @@ Les actions disponibles sont :
 
 Ne générez la ligne ACTION que lorsque l'utilisateur demande explicitement l'une de ces deux actions, avec les informations nécessaires. Sinon, répondez simplement en tant qu'assistant, en vous appuyant sur vos connaissances et, si besoin, sur la recherche web.
 
-QUESTIONNAIRE INTERACTIF : lorsque le pharmacien vous demande de préparer un questionnaire à faire remplir au patient (par exemple : "fais-moi un questionnaire sur sa douleur abdominale", "pose des questions au patient sur ses symptômes", "génère un questionnaire d'évaluation pour cette allergie"), ne listez pas les questions en texte libre. Générez à la place, à la toute fin de votre réponse, un bloc unique commençant par "QUESTIONNAIRE:" suivi d'un objet JSON strict (aucun commentaire, aucun texte après) au format suivant :
-QUESTIONNAIRE: {"title":"Titre court du questionnaire","questions":[{"id":"identifiant_court","type":"text","label":"Question ouverte"},{"id":"identifiant_court2","type":"radio","label":"Question à choix unique","options":["Option A","Option B"]},{"id":"identifiant_court3","type":"checkbox","label":"Question à choix multiples","options":["Option A","Option B","Option C"]},{"id":"identifiant_court4","type":"scale","label":"Intensité (0 à 10)","min":0,"max":10}]}
-Règles pour ce bloc :
-- Types autorisés uniquement : "text" (réponse libre courte), "radio" (choix unique parmi "options"), "checkbox" (choix multiples parmi "options"), "scale" (curseur numérique, avec "min" et "max").
-- Entre 4 et 8 questions maximum, pertinentes et ciblées par rapport à la demande.
+QUESTIONNAIRE INTERACTIF : lorsque le pharmacien vous demande de préparer un questionnaire à faire remplir au patient (par exemple : "fais-moi un questionnaire sur sa douleur abdominale", "pose des questions au patient sur ses symptômes", "génère un questionnaire d'évaluation pour cette allergie"), vous devez impérativement générer un questionnaire structuré au format JSON. Pour cela, terminez votre réponse par le bloc exact suivant, et ne mettez rien après ce bloc (pas de phrase finale, pas de point, pas de retour à la ligne) :
+
+QUESTIONNAIRE:{"title":"Titre court du questionnaire","questions":[{"id":"q1","type":"text","label":"Question ouverte"},{"id":"q2","type":"radio","label":"Question à choix unique","options":["Option A","Option B"]},{"id":"q3","type":"checkbox","label":"Question à choix multiples","options":["Option A","Option B","Option C"]},{"id":"q4","type":"scale","label":"Intensité (0 à 10)","min":0,"max":10}]}
+
+ATTENTION : le JSON doit être sur une seule ligne, sans espaces superflus, et strictement valide. Utilisez des guillemets droits (") pour les chaînes. N'ajoutez aucun commentaire, aucun texte après le dernier '}'. Le marqueur "QUESTIONNAIRE:" doit être collé au JSON sans espace.
+
+Règles pour les questions :
+- Types autorisés : "text" (réponse libre courte), "radio" (choix unique parmi "options"), "checkbox" (choix multiples parmi "options"), "scale" (curseur numérique avec "min" et "max").
+- Entre 4 et 8 questions maximum, pertinentes et ciblées.
 - Chaque "id" doit être court, unique, sans espace ni accent.
 - N'incluez jamais de ligne ACTION dans la même réponse qu'un bloc QUESTIONNAIRE.
-- Avant ce bloc, vous pouvez ajouter une courte phrase d'introduction (une seule phrase, ex. "Voici un questionnaire à faire remplir au patient :"), sans reformuler les questions en texte.
-- Quand, plus tard dans la conversation, un message vous transmet les réponses du patient à un questionnaire (message commençant généralement par "Réponses du patient au questionnaire"), analysez ces réponses avec vos connaissances pharmaceutiques et médicales générales (et la fiche patient si elle est fournie ci-dessus), puis proposez une analyse structurée : pistes probables, signes de gravité éventuels à surveiller, et une orientation (conseil à l'officine, orientation vers un médecin/urgences si besoin). Ne posez jamais de diagnostic formel et rappelez que la décision clinique finale revient au pharmacien.
+- Avant le bloc, vous pouvez ajouter une courte phrase d'introduction (une seule phrase, ex. "Voici un questionnaire à faire remplir au patient :"), sans reformuler les questions en texte.
 
+IMPORTANT : Si vous ne parvenez pas à générer un questionnaire valide, dites simplement en texte "Je ne peux pas générer de questionnaire pour cette demande." sans inclure le marqueur QUESTIONNAIRE.
+
+Quand, plus tard dans la conversation, un message vous transmet les réponses du patient à un questionnaire (message commençant généralement par "Réponses du patient au questionnaire"), analysez ces réponses avec vos connaissances pharmaceutiques et médicales générales et ou des recherches sur le web (et la fiche patient si elle est fournie ci-dessus), puis proposez une analyse structurée : pistes probables, signes de gravité éventuels à surveiller, et une orientation (conseil à l'officine, orientation vers un médecin/urgences si besoin). Ne posez jamais de diagnostic formel et rappelez que la décision clinique finale revient au pharmacien.
 Si l'utilisateur pose une question qui n'a pas de rapport avec la santé, la pharmacie ou la medecine en general, repondez puis redirigez le de façon polie vers la santé, la pharmacie ou la medecine en general. Et gardez à l'esprit que les patients sont en côte d'ivoire, donc certaines informations peuvent être différentes de celles d'autres pays (médicaments disponibles, réglementation, prix, etc.).`;
 
     const inputs = messages
@@ -186,36 +192,69 @@ function extractQuestionnaire(text) {
   const markerIdx = text.indexOf(marker);
   if (markerIdx === -1) return { content: text, questionnaire: null };
 
-  const jsonStart = text.indexOf('{', markerIdx);
+  // Prendre la partie après le marqueur
+  const afterMarker = text.slice(markerIdx + marker.length).trim();
+  
+  // Trouver la première accolade ouvrante
+  const jsonStart = afterMarker.indexOf('{');
   if (jsonStart === -1) return { content: text, questionnaire: null };
 
-  // Recherche de l'accolade fermante correspondante (JSON potentiellement imbriqué)
+  // Extraire la sous-chaîne potentielle du JSON
+  let jsonCandidate = afterMarker.slice(jsonStart);
+  
+  // Nettoyer les caractères invisibles et les retours à la ligne
+  jsonCandidate = jsonCandidate.replace(/[\r\n\t]/g, ' ').replace(/\s+/g, ' ');
+  
+  // Trouver l'accolade fermante correspondante
   let depth = 0;
   let jsonEnd = -1;
-  for (let i = jsonStart; i < text.length; i++) {
-    if (text[i] === '{') depth++;
-    else if (text[i] === '}') {
+  for (let i = 0; i < jsonCandidate.length; i++) {
+    const ch = jsonCandidate[i];
+    if (ch === '{') depth++;
+    else if (ch === '}') {
       depth--;
       if (depth === 0) {
-        jsonEnd = i;
+        jsonEnd = i + 1; // inclure la }
         break;
       }
     }
   }
   if (jsonEnd === -1) return { content: text, questionnaire: null };
 
-  const jsonStr = text.slice(jsonStart, jsonEnd + 1);
+  // Extraire le JSON
+  let jsonStr = jsonCandidate.slice(0, jsonEnd);
+  
+  // Essayer de réparer les problèmes courants
+  jsonStr = jsonStr
+    .replace(/([{,]\s*)(\w+)\s*:/g, '$1"$2":') // ajouter des guillemets autour des clés non stringifiées
+    .replace(/:\s*'([^']*)'/g, ':"$1"') // remplacer les guillemets simples par des doubles
+    .replace(/,\s*}/g, '}') // enlever les virgules en trop avant }
+    .replace(/,\s*]/g, ']'); // enlever les virgules en trop avant ]
+
   let parsed;
   try {
     parsed = JSON.parse(jsonStr);
-  } catch {
-    return { content: text, questionnaire: null };
+  } catch (e) {
+    console.warn('Échec du parsing JSON, tentative de récupération...', jsonStr);
+    
+    // Tentative de récupération : remplacer les guillemets échappés
+    try {
+      const fixed = jsonStr.replace(/\\"/g, '"');
+      parsed = JSON.parse(fixed);
+    } catch (e2) {
+      console.error('Échec définitif du parsing JSON :', jsonStr);
+      return { content: text, questionnaire: null };
+    }
   }
 
   const questionnaire = normalizeQuestionnaire(parsed);
   if (!questionnaire) return { content: text, questionnaire: null };
 
-  const cleanedContent = (text.slice(0, markerIdx) + text.slice(jsonEnd + 1)).trim();
+  // Nettoyer le contenu : supprimer le marqueur et le JSON
+  const beforeMarker = text.slice(0, markerIdx);
+  const afterJson = text.slice(markerIdx + marker.length + jsonStr.length + 1); // +1 pour l'espace
+  const cleanedContent = (beforeMarker + afterJson).trim();
+  
   return { content: cleanedContent, questionnaire };
 }
 
@@ -238,17 +277,20 @@ function normalizeQuestionnaire(raw) {
     const question = { id, type, label };
 
     if (type === 'radio' || type === 'checkbox') {
-      const options = Array.isArray(q.options)
+      let options = Array.isArray(q.options)
         ? q.options.filter((o) => typeof o === 'string' && o.trim() !== '').map((o) => o.trim().slice(0, 120)).slice(0, 12)
         : [];
-      if (options.length < 2) continue;
+      // S'assurer qu'il y a au moins 2 options
+      if (options.length < 2) {
+        options = type === 'radio' ? ['Oui', 'Non'] : ['Option 1', 'Option 2'];
+      }
       question.options = options;
     }
 
     if (type === 'scale') {
-      const min = Number.isFinite(q.min) ? q.min : 0;
-      const max = Number.isFinite(q.max) ? q.max : 10;
-      if (max <= min) continue;
+      let min = Number.isFinite(q.min) ? q.min : 0;
+      let max = Number.isFinite(q.max) ? q.max : 10;
+      if (max <= min) { min = 0; max = 10; }
       question.min = min;
       question.max = max;
     }

@@ -69,9 +69,10 @@ export default async function handler(req, res) {
     });
 
     if (!smsResponse.ok) {
-      const errorText = await smsResponse.text();
-      throw new Error(errorText);
-    }
+  const errorText = await smsResponse.text();
+  console.error('Réponse SMSGate (status %d) : %s', smsResponse.status, errorText);
+  throw new Error(`SMSGate: ${errorText}`);
+}
 
     const data = await smsResponse.json();
     res.status(200).json({ success: true, id: data.id || null });

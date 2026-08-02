@@ -162,24 +162,28 @@ function useOnlineStatus() {
 }
 
 function useInstallPrompt() {
-  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [deferredPrompt, setDeferredPrompt] = useState(
+    typeof window !== 'undefined' ? window.__deferredInstallPrompt : null
+  );
   const [installed, setInstalled] = useState(
     typeof window !== 'undefined' && window.matchMedia('(display-mode: standalone)').matches
   );
 
   useEffect(() => {
-    const onBeforeInstall = (e) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-    };
+    // Au cas où l'évènement soit arrivé entre le premier rendu et ce useEffect
+    if (window.__deferredInstallPrompt) setDeferredPrompt(window.__deferredInstallPrompt);
+
+    const onAvailable = () => setDeferredPrompt(window.__deferredInstallPrompt);
     const onInstalled = () => {
       setInstalled(true);
       setDeferredPrompt(null);
     };
-    window.addEventListener('beforeinstallprompt', onBeforeInstall);
+    window.addEventListener('pwa-install-available', onAvailable);
+    window.addEventListener('pwa-install-installed', onInstalled);
     window.addEventListener('appinstalled', onInstalled);
     return () => {
-      window.removeEventListener('beforeinstallprompt', onBeforeInstall);
+      window.removeEventListener('pwa-install-available', onAvailable);
+      window.removeEventListener('pwa-install-installed', onInstalled);
       window.removeEventListener('appinstalled', onInstalled);
     };
   }, []);
@@ -188,6 +192,7 @@ function useInstallPrompt() {
     if (!deferredPrompt) return null;
     deferredPrompt.prompt();
     const { outcome } = await deferredPrompt.userChoice;
+    window.__deferredInstallPrompt = null;
     setDeferredPrompt(null);
     return outcome; // 'accepted' | 'dismissed'
   };
@@ -209,7 +214,7 @@ function FloatingInstallBadge({ dark }) {
   const handleClick = async () => {
     if (isIOS) { setShowIOSHelp(true); return; }
     const outcome = await promptInstall();
-    if (outcome === 'accepted') push('Application installée avec succès.', 'success');
+    if (outcome === 'accepted') push('Application installée : elle reste maintenant accessible même sans connexion internet.', 'success');
   };
 
   return (
@@ -222,11 +227,11 @@ function FloatingInstallBadge({ dark }) {
         onBlur={() => setExpanded(false)}
         onTouchStart={() => setExpanded((v) => !v)}
         initial={false}
-        animate={{ width: expanded ? 170 : 52 }}
+        animate={{ width: expanded ? 260 : 52 }}
         transition={{ type: 'spring', stiffness: 320, damping: 28 }}
         className="fixed bottom-5 right-5 z-[90] flex items-center gap-2 overflow-hidden rounded-full shadow-lg px-3.5"
         style={{ height: 52, background: C.teal, color: 'white' }}
-        aria-label="Installer l'application"
+        aria-label="Installer l'application pour l'utiliser hors ligne"
       >
         <ArrowDownTrayIcon className="h-5 w-5 flex-shrink-0" />
         <AnimatePresence>
@@ -236,9 +241,10 @@ function FloatingInstallBadge({ dark }) {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -6 }}
               transition={{ duration: 0.15 }}
-              className="text-sm font-medium whitespace-nowrap"
+              className="text-sm font-medium whitespace-nowrap leading-tight text-left"
             >
-              Télécharger
+              Installer l'application<br />
+              <span className="text-xs font-normal opacity-80">pour l'utiliser hors ligne</span>
             </motion.span>
           )}
         </AnimatePresence>
@@ -256,7 +262,8 @@ function FloatingInstallBadge({ dark }) {
               <p className="text-sm text-gray-600">
                 Ouvre ce site dans Safari, appuie sur l'icône de partage, puis choisis
                 « Sur l'écran d'accueil ». L'application apparaîtra ensuite comme une app normale,
-                utilisable même sans connexion.
+                <b> utilisable même sans connexion internet</b> — tes données patients resteront
+                consultables et se synchroniseront dès que la connexion reviendra.
               </p>
               <button
                 onClick={() => setShowIOSHelp(false)}
@@ -721,8 +728,8 @@ function Sidebar() {
   return (
     <div className="w-64 flex flex-col h-screen sticky top-0" style={{ background: `linear-gradient(180deg, ${C.ink}, ${C.inkSoft})` }}>
       <div className="flex items-center gap-2 h-16 border-b border-white/10 px-5">
-        <div className="h-8 w-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: C.amber }}>
-          <BeakerIcon className="h-4 w-4 text-white" />
+        <div className="h-9 w-9 rounded-lg flex items-center justify-center flex-shrink-0 bg-white p-1">
+          <img src="/icon-512.png" alt="Logo Sainte Marie Majeure" className="h-full w-full object-contain" />
         </div>
         <span className="text-white font-display text-base leading-tight">Sainte Marie Majeure</span>
       </div>
@@ -2755,9 +2762,7 @@ function LayoutWithSidebar({ children }) {
   return (
     <div className={`min-h-screen flex ${dark ? 'bg-[#0A1F1C]' : 'bg-[#F6F3EC]'}`}>
       <GlobalStyle />
-      <ToastStack />
       <CommandPalette />
-      <FloatingInstallBadge dark={dark} />
       <div className="hidden md:block"><Sidebar /></div>
       <AnimatePresence>
         {mobileOpen && (
@@ -2793,11 +2798,16 @@ function AppRoutes() {
 }
 
 function App() {
+  const { dark } = useUIStore();
   return (
     <AuthProvider>
       <BrowserRouter>
         <AppRoutes />
       </BrowserRouter>
+      {/* Montés au niveau racine : visibles sur /login aussi, et on ne rate jamais
+          l'évènement beforeinstallprompt même s'il arrive avant connexion. */}
+      <ToastStack />
+      <FloatingInstallBadge dark={dark} />
     </AuthProvider>
   );
 }

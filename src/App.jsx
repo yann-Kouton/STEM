@@ -192,13 +192,22 @@ function calculAge(dateNaissance) {
 
 function capitalizeSentences(text) {
   if (!text) return text;
-  const sentences = text.match(/[^.!?]+[.!?]+/g) || [text];
-  const capitalized = sentences.map(sentence => {
-    const trimmed = sentence.trim();
-    if (trimmed.length === 0) return sentence;
-    return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
-  });
-  return capitalized.join(' ');
+  let result = '';
+  let capitalizeNext = true;
+  for (const char of text) {
+    if (capitalizeNext && /\p{L}/u.test(char)) {
+      result += char.toUpperCase();
+      capitalizeNext = false;
+    } else {
+      result += char;
+      if (/[.!?]/.test(char)) {
+        capitalizeNext = true;
+      } else if (!/\s/.test(char)) {
+        capitalizeNext = false;
+      }
+    }
+  }
+  return result;
 }
 
 function PrivateRoute({ children }) {

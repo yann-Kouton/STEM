@@ -18,7 +18,8 @@ import {
   ShieldExclamationIcon, CheckCircleIcon, InformationCircleIcon, ExclamationTriangleIcon,
   CalendarDaysIcon, Bars3Icon, SparklesIcon, ArrowPathIcon,
   PaperAirplaneIcon, ChevronDownIcon,
-  EyeIcon, EyeSlashIcon
+  EyeIcon, EyeSlashIcon,
+  ArrowDownTrayIcon, SignalSlashIcon
 } from '@heroicons/react/24/outline';
 import { sendPasswordResetEmail, sendEmailVerification, updateProfile } from 'firebase/auth';
 import { auth, db } from './firebase/config';
@@ -139,6 +140,151 @@ function ToastStack() {
           );
         })}
       </AnimatePresence>
+    </div>
+  );
+}
+
+// --- PWA : statut réseau + invite d'installation ---------------------------
+
+function useOnlineStatus() {
+  const [online, setOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  useEffect(() => {
+    const goOnline = () => setOnline(true);
+    const goOffline = () => setOnline(false);
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
+    return () => {
+      window.removeEventListener('online', goOnline);
+      window.removeEventListener('offline', goOffline);
+    };
+  }, []);
+  return online;
+}
+
+function useInstallPrompt() {
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [installed, setInstalled] = useState(
+    typeof window !== 'undefined' && window.matchMedia('(display-mode: standalone)').matches
+  );
+
+  useEffect(() => {
+    const onBeforeInstall = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+    const onInstalled = () => {
+      setInstalled(true);
+      setDeferredPrompt(null);
+    };
+    window.addEventListener('beforeinstallprompt', onBeforeInstall);
+    window.addEventListener('appinstalled', onInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onBeforeInstall);
+      window.removeEventListener('appinstalled', onInstalled);
+    };
+  }, []);
+
+  const promptInstall = async () => {
+    if (!deferredPrompt) return null;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    setDeferredPrompt(null);
+    return outcome; // 'accepted' | 'dismissed'
+  };
+
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+
+  return { canInstall: !!deferredPrompt, installed, promptInstall, isIOS };
+}
+
+function FloatingInstallBadge({ dark }) {
+  const { canInstall, installed, promptInstall, isIOS } = useInstallPrompt();
+  const [expanded, setExpanded] = useState(false);
+  const [showIOSHelp, setShowIOSHelp] = useState(false);
+  const { push } = useToastStore();
+
+  if (installed) return null;
+  if (!canInstall && !isIOS) return null;
+
+  const handleClick = async () => {
+    if (isIOS) { setShowIOSHelp(true); return; }
+    const outcome = await promptInstall();
+    if (outcome === 'accepted') push('Application installée avec succès.', 'success');
+  };
+
+  return (
+    <>
+      <motion.button
+        onClick={handleClick}
+        onMouseEnter={() => setExpanded(true)}
+        onMouseLeave={() => setExpanded(false)}
+        onFocus={() => setExpanded(true)}
+        onBlur={() => setExpanded(false)}
+        onTouchStart={() => setExpanded((v) => !v)}
+        initial={false}
+        animate={{ width: expanded ? 170 : 52 }}
+        transition={{ type: 'spring', stiffness: 320, damping: 28 }}
+        className="fixed bottom-5 right-5 z-[90] flex items-center gap-2 overflow-hidden rounded-full shadow-lg px-3.5"
+        style={{ height: 52, background: C.teal, color: 'white' }}
+        aria-label="Installer l'application"
+      >
+        <ArrowDownTrayIcon className="h-5 w-5 flex-shrink-0" />
+        <AnimatePresence>
+          {expanded && (
+            <motion.span
+              initial={{ opacity: 0, x: -6 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -6 }}
+              transition={{ duration: 0.15 }}
+              className="text-sm font-medium whitespace-nowrap"
+            >
+              Télécharger
+            </motion.span>
+          )}
+        </AnimatePresence>
+      </motion.button>
+
+      <AnimatePresence>
+        {showIOSHelp && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/40 z-[100] flex items-center justify-center p-4"
+            onClick={() => setShowIOSHelp(false)}
+          >
+            <div className="bg-white rounded-xl p-5 max-w-sm" onClick={(e) => e.stopPropagation()}>
+              <p className="font-medium mb-2 text-gray-800">Installer sur iPhone / iPad</p>
+              <p className="text-sm text-gray-600">
+                Ouvre ce site dans Safari, appuie sur l'icône de partage, puis choisis
+                « Sur l'écran d'accueil ». L'application apparaîtra ensuite comme une app normale,
+                utilisable même sans connexion.
+              </p>
+              <button
+                onClick={() => setShowIOSHelp(false)}
+                className="mt-4 w-full py-2 rounded-lg text-white text-sm font-medium"
+                style={{ background: C.teal }}
+              >
+                Compris
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </>
+  );
+}
+
+function OfflineBanner({ dark }) {
+  const online = useOnlineStatus();
+  if (online) return null;
+  return (
+    <div className={`flex items-center gap-2 mb-3 px-3 py-2 rounded-lg text-sm border ${
+      dark ? 'bg-amber-500/10 border-amber-500/30 text-amber-300' : 'bg-amber-50 border-amber-200 text-amber-700'
+    }`}>
+      <SignalSlashIcon className="h-4 w-4 flex-shrink-0" />
+      <span>
+        Vous êtes hors ligne. Vignon (l'assistant IA) n'est pas disponible, mais vos données
+        patients restent accessibles et se synchroniseront automatiquement dès le retour de la connexion.
+      </span>
     </div>
   );
 }
@@ -2247,6 +2393,7 @@ function AssistantPage() {
 
   const chatContainerRef = useRef(null);
   const inputRef = useRef(null);
+  const online = useOnlineStatus();
 
   useEffect(() => {
     if (!user) return;
@@ -2393,6 +2540,10 @@ function AssistantPage() {
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
+    if (!online) {
+      push('Vignon est indisponible hors ligne. Reconnectez-vous à internet pour lui parler.', 'error');
+      return;
+    }
     const userMsg = input.trim();
     setInput('');
     await sendUserMessage(userMsg);
@@ -2439,6 +2590,8 @@ function AssistantPage() {
           Nouvelle conversation
         </button>
       </div>
+
+      <OfflineBanner dark={dark} />
 
       <div
         ref={chatContainerRef}
@@ -2506,19 +2659,19 @@ function AssistantPage() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-          placeholder="Posez une question ou donnez une instruction..."
+          placeholder={online ? "Posez une question ou donnez une instruction..." : "Vignon est indisponible hors ligne"}
           className={`flex-1 px-4 py-2 rounded-lg border focus:ring-2 outline-none ${
             dark
               ? 'bg-[#0F2E29] border-white/10 text-white placeholder:text-white/30'
               : 'bg-white border-gray-300'
           }`}
-          disabled={isLoading}
+          disabled={isLoading || !online}
         />
         <button
           onClick={handleSend}
-          disabled={isLoading || !input.trim()}
+          disabled={isLoading || !input.trim() || !online}
           className={`px-4 py-2 rounded-lg text-white font-medium transition-colors ${
-            isLoading || !input.trim() ? 'opacity-50 cursor-not-allowed' : 'hover:bg-opacity-80'
+            isLoading || !input.trim() || !online ? 'opacity-50 cursor-not-allowed' : 'hover:bg-opacity-80'
           }`}
           style={{ background: C.teal }}
         >
@@ -2604,6 +2757,7 @@ function LayoutWithSidebar({ children }) {
       <GlobalStyle />
       <ToastStack />
       <CommandPalette />
+      <FloatingInstallBadge dark={dark} />
       <div className="hidden md:block"><Sidebar /></div>
       <AnimatePresence>
         {mobileOpen && (

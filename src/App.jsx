@@ -951,6 +951,9 @@ function PatientDetailDrawer({ patient, onClose, dark, onEditConstante, onDelete
           <p className={`font-display text-xl ${dark ? 'text-white' : 'text-gray-800'}`}>
             {patient.prenom} {patient.nom}
           </p>
+          {patient.matricule && (
+            <p className={`text-xs font-mono mt-0.5 ${dark ? 'text-white/40' : 'text-gray-400'}`}>Matricule : {patient.matricule}</p>
+          )}
           {patient.contact1 && (
             <p className={`text-sm flex items-center gap-1 mt-0.5 ${dark ? 'text-white/60' : 'text-gray-600'}`}>
               <PhoneIcon className="h-4 w-4" /> {patient.contact1}
@@ -1501,15 +1504,23 @@ function PatientsPage() {
     notes: ''
   });
   const [isUploading, setIsUploading] = useState(false);
+  const [isAssigningMatricules, setIsAssigningMatricules] = useState(false);
   const [rdvPatient, setRdvPatient] = useState(null);
   const [editingRdvIndex, setEditingRdvIndex] = useState(null);
   const searchInputRef = useRef(null);
 
   useEffect(() => {
     if (!user) return;
-    const q = query(collection(db, 'patients'), where('pharmacienId', '==', user.uid), orderBy('nom'));
+    const q = query(collection(db, 'patients'), where('pharmacienId', '==', user.uid));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      setPatients(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+      const liste = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+      // Du plus récent au plus ancien (les patients sans date de création passent en dernier)
+      liste.sort((a, b) => {
+        const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(0);
+        const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(0);
+        return dateB - dateA;
+      });
+      setPatients(liste);
       setLoading(false);
     }, (err) => { push('Erreur de chargement : ' + err.message, 'error'); setLoading(false); });
     return unsubscribe;
@@ -1523,8 +1534,46 @@ function PatientsPage() {
   const filteredPatients = patients.filter((p) =>
     (p.nom?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
     (p.prenom?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
-    (p.contact1 || p.telephone || '').includes(searchTerm)
+    (p.contact1 || p.telephone || '').includes(searchTerm) ||
+    (p.matricule?.toLowerCase() || '').includes(searchTerm.toLowerCase())
   );
+
+  // Calcule le prochain matricule disponible à partir des matricules déjà attribués
+  const genererProchainMatricule = (liste) => {
+    const dernierNumero = liste.reduce((max, p) => {
+      const match = p.matricule ? String(p.matricule).match(/(\d+)$/) : null;
+      return match ? Math.max(max, parseInt(match[1], 10)) : max;
+    }, 0);
+    return `P${String(dernierNumero + 1).padStart(4, '0')}`;
+  };
+
+  const patientsSansMatricule = patients.filter((p) => !p.matricule);
+
+  const assignerMatriculesManquants = async () => {
+    if (patientsSansMatricule.length === 0) return;
+    setIsAssigningMatricules(true);
+    try {
+      let dernierNumero = patients.reduce((max, p) => {
+        const match = p.matricule ? String(p.matricule).match(/(\d+)$/) : null;
+        return match ? Math.max(max, parseInt(match[1], 10)) : max;
+      }, 0);
+      // On attribue les matricules en respectant l'ordre d'ancienneté des patients
+      const ordonnes = [...patientsSansMatricule].sort((a, b) => {
+        const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(0);
+        const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(0);
+        return dateA - dateB;
+      });
+      for (const p of ordonnes) {
+        dernierNumero += 1;
+        await updateDoc(doc(db, 'patients', p.id), { matricule: `P${String(dernierNumero).padStart(4, '0')}` });
+      }
+      push(`Matricule attribué à ${ordonnes.length} patient(s)`, 'success');
+    } catch (err) {
+      push('Erreur lors de l\'attribution des matricules : ' + err.message, 'error');
+    } finally {
+      setIsAssigningMatricules(false);
+    }
+  };
 
   const createCapitalizedChangeHandler = (field) => (e) => {
     const value = e.target.value;
@@ -1626,8 +1675,9 @@ function PatientsPage() {
         await updateDoc(doc(db, 'patients', editingPatient.id), patientData);
         push('Patient mis à jour', 'success');
       } else {
-        await addDoc(collection(db, 'patients'), { ...patientData, historique: [], constantes: [], rendezVous: [], createdAt: serverTimestamp() });
-        push('Patient ajouté', 'success');
+        const matricule = genererProchainMatricule(patients);
+        await addDoc(collection(db, 'patients'), { ...patientData, matricule, historique: [], constantes: [], rendezVous: [], createdAt: serverTimestamp() });
+        push(`Patient ajouté — matricule ${matricule}`, 'success');
         sendWelcomeSms(patientData);
       }
       resetForm();
@@ -1775,11 +1825,19 @@ function PatientsPage() {
     <div className="p-4 md:p-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div><h1 className={`font-display text-2xl ${dark ? 'text-white' : 'text-gray-800'}`}>Gestion des patients</h1><p className={`text-sm ${dark ? 'text-white/50' : 'text-gray-500'}`}>{filteredPatients.length} patient(s)</p></div>
-        <button onClick={openAddModal} className="flex items-center gap-2 text-white px-4 py-2 rounded-lg transition-transform hover:scale-[1.02]" style={{ background: C.teal }}><UserPlusIcon className="h-5 w-5" /> Ajouter un patient</button>
+        <div className="flex flex-col sm:flex-row gap-2">
+          {patientsSansMatricule.length > 0 && (
+            <button onClick={assignerMatriculesManquants} disabled={isAssigningMatricules} className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-colors ${dark ? 'border-white/20 text-white/80 hover:bg-white/10' : 'border-gray-300 text-gray-700 hover:bg-gray-50'} disabled:opacity-50`}>
+              <ClipboardDocumentListIcon className="h-5 w-5" />
+              {isAssigningMatricules ? 'Attribution en cours…' : `Attribuer un matricule (${patientsSansMatricule.length})`}
+            </button>
+          )}
+          <button onClick={openAddModal} className="flex items-center gap-2 text-white px-4 py-2 rounded-lg transition-transform hover:scale-[1.02]" style={{ background: C.teal }}><UserPlusIcon className="h-5 w-5" /> Ajouter un patient</button>
+        </div>
       </div>
       <div className="relative mb-4">
         <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
-        <input ref={searchInputRef} type="text" placeholder="Rechercher par nom, prénom ou téléphone..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className={`w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 outline-none ${dark ? 'bg-[#0F2E29] border-white/10 text-white placeholder:text-white/30' : 'border-gray-300 bg-white'}`} />
+        <input ref={searchInputRef} type="text" placeholder="Rechercher par nom, prénom, téléphone ou matricule..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className={`w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 outline-none ${dark ? 'bg-[#0F2E29] border-white/10 text-white placeholder:text-white/30' : 'border-gray-300 bg-white'}`} />
       </div>
       {filteredPatients.length === 0 ? (
         <div className="text-center py-12 rounded-xl border" style={{ background: dark ? C.cardDark : C.card, borderColor: dark ? '#ffffff14' : '#00000010' }}>
@@ -1798,7 +1856,10 @@ function PatientsPage() {
               <div key={patient.id} className="p-4 rounded-xl transition-shadow hover:shadow-md" style={{ background: dark ? C.cardDark : C.card, border: `1px solid ${renouvUrgent ? C.amber + '55' : (dark ? '#ffffff14' : '#00000010')}` }}>
                 <div className="flex items-start justify-between">
                   <button onClick={() => setDetailPatient(patient)} className="flex-1 text-left">
-                    <h3 className={`font-semibold ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.prenom} {patient.nom}</h3>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className={`font-semibold ${dark ? 'text-white' : 'text-gray-800'}`}>{patient.prenom} {patient.nom}</h3>
+                      {patient.matricule && <span className={`text-[11px] font-mono px-1.5 py-0.5 rounded ${dark ? 'bg-white/10 text-white/60' : 'bg-gray-100 text-gray-500'}`}>{patient.matricule}</span>}
+                    </div>
                     {contact && <span className="text-sm text-green-600 flex items-center gap-1 mt-1"><PhoneIcon className="h-4 w-4" /> {contact}</span>}
                     {patient.allergieMedicamenteuse === 'OUI' && patient.allergiePrecision && <p className="text-xs text-red-600 mt-1">Allergie : {patient.allergiePrecision}</p>}
                     {patient.pathologieChronique && <p className="text-xs text-amber-600 mt-1">Pathologie : {patient.pathologieChronique}</p>}

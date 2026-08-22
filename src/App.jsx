@@ -1538,13 +1538,26 @@ function PatientsPage() {
     (p.matricule?.toLowerCase() || '').includes(searchTerm.toLowerCase())
   );
 
-  // Calcule le prochain matricule disponible à partir des matricules déjà attribués
-  const genererProchainMatricule = (liste) => {
+  // Format JJMMAA pour une date donnée
+  const formatDateMatricule = (date) => {
+    const jj = String(date.getDate()).padStart(2, '0');
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const aa = String(date.getFullYear()).slice(-2);
+    return `${jj}${mm}${aa}`;
+  };
+
+  // Calcule le prochain matricule du jour (ex: P220826 puis P2208261, P2208262...) à partir des matricules déjà attribués pour cette date
+  const genererMatriculePourDate = (liste, date) => {
+    const prefixe = `P${formatDateMatricule(date)}`;
     const dernierNumero = liste.reduce((max, p) => {
-      const match = p.matricule ? String(p.matricule).match(/(\d+)$/) : null;
-      return match ? Math.max(max, parseInt(match[1], 10)) : max;
+      if (p.matricule && p.matricule.startsWith(prefixe)) {
+        const suffixe = p.matricule.slice(prefixe.length);
+        const n = parseInt(suffixe, 10);
+        if (!isNaN(n) && n > max) return n;
+      }
+      return max;
     }, 0);
-    return `P${String(dernierNumero + 1).padStart(4, '0')}`;
+    return `${prefixe}${dernierNumero + 1}`;
   };
 
   const patientsSansMatricule = patients.filter((p) => !p.matricule);
@@ -1553,19 +1566,19 @@ function PatientsPage() {
     if (patientsSansMatricule.length === 0) return;
     setIsAssigningMatricules(true);
     try {
-      let dernierNumero = patients.reduce((max, p) => {
-        const match = p.matricule ? String(p.matricule).match(/(\d+)$/) : null;
-        return match ? Math.max(max, parseInt(match[1], 10)) : max;
-      }, 0);
       // On attribue les matricules en respectant l'ordre d'ancienneté des patients
       const ordonnes = [...patientsSansMatricule].sort((a, b) => {
         const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(0);
         const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(0);
         return dateA - dateB;
       });
+      // Copie locale pour que la séquence du jour reste cohérente pendant toute l'opération
+      let liste = [...patients];
       for (const p of ordonnes) {
-        dernierNumero += 1;
-        await updateDoc(doc(db, 'patients', p.id), { matricule: `P${String(dernierNumero).padStart(4, '0')}` });
+        const dateCreation = p.createdAt?.toDate ? p.createdAt.toDate() : new Date();
+        const matricule = genererMatriculePourDate(liste, dateCreation);
+        await updateDoc(doc(db, 'patients', p.id), { matricule });
+        liste = liste.map((x) => (x.id === p.id ? { ...x, matricule } : x));
       }
       push(`Matricule attribué à ${ordonnes.length} patient(s)`, 'success');
     } catch (err) {
@@ -1675,7 +1688,7 @@ function PatientsPage() {
         await updateDoc(doc(db, 'patients', editingPatient.id), patientData);
         push('Patient mis à jour', 'success');
       } else {
-        const matricule = genererProchainMatricule(patients);
+        const matricule = genererMatriculePourDate(patients, new Date());
         await addDoc(collection(db, 'patients'), { ...patientData, matricule, historique: [], constantes: [], rendezVous: [], createdAt: serverTimestamp() });
         push(`Patient ajouté — matricule ${matricule}`, 'success');
         sendWelcomeSms(patientData);

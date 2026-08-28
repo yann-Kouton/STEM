@@ -9,6 +9,15 @@ import {
   ResponsiveContainer, PieChart, Pie, Cell, Legend
 } from 'recharts';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { EmployeeProvider, useEmployee } from './context/EmployeeContext';
+import { C, useUIStore, useToastStore } from './lib/theme';
+import { ROLES, roleLabel, defaultRouteForRole, determineDefaultRole, isClinicalRole } from './lib/personnel';
+import ReclamationNotifier from './components/personnel/ReclamationNotifier';
+import AdminPage from './pages/personnel/AdminPage';
+import ReclamationsPage from './pages/personnel/ReclamationsPage';
+import PermissionsPage from './pages/personnel/PermissionsPage';
+import RemarquesPage from './pages/personnel/RemarquesPage';
+import RapportsComptablePage from './pages/personnel/RapportsComptablePage';
 import {
   EnvelopeIcon, LockClosedIcon, ArrowLeftOnRectangleIcon, CheckBadgeIcon, XMarkIcon,
   UserPlusIcon, MagnifyingGlassIcon, PencilSquareIcon, TrashIcon, UserCircleIcon,
@@ -19,50 +28,18 @@ import {
   CalendarDaysIcon, Bars3Icon, SparklesIcon, ArrowPathIcon,
   PaperAirplaneIcon, ChevronDownIcon,
   EyeIcon, EyeSlashIcon,
-  ArrowDownTrayIcon, SignalSlashIcon
+  ArrowDownTrayIcon, SignalSlashIcon,
+  MegaphoneIcon, ClipboardDocumentCheckIcon, ChatBubbleLeftEllipsisIcon,
+  Cog6ToothIcon, DocumentArrowUpIcon
 } from '@heroicons/react/24/outline';
 import { sendPasswordResetEmail, sendEmailVerification, updateProfile } from 'firebase/auth';
 import { auth, db } from './firebase/config';
 import {
-  collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, query,
+  collection, addDoc, updateDoc, deleteDoc, doc, getDoc, onSnapshot, query,
   orderBy, serverTimestamp, where, arrayUnion, setDoc
 } from 'firebase/firestore';
 
-const CLOUDINARY_CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
-const CLOUDINARY_UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
-
-async function uploadToCloudinary(file) {
-  if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_UPLOAD_PRESET) {
-    throw new Error('Cloudinary non configuré. Vérifiez vos variables d\'environnement.');
-  }
-  const formData = new FormData();
-  formData.append('file', file);
-  formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
-  const response = await fetch(
-    `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
-    { method: 'POST', body: formData }
-  );
-  if (!response.ok) {
-    const errorData = await response.json();
-    throw new Error(errorData.error?.message || 'Erreur lors de l\'upload vers Cloudinary');
-  }
-  const data = await response.json();
-  return data.secure_url;
-}
-
-const C = {
-  ink: '#0B2B26',
-  inkSoft: '#12433C',
-  teal: '#146C5E',
-  tealLight: '#1E8C77',
-  paper: '#F6F3EC',
-  paperDark: '#0A1F1C',
-  card: '#FFFFFF',
-  cardDark: '#0F2E29',
-  amber: '#C77B2C',
-  clay: '#B84C3D',
-  sage: '#6E9C82',
-};
+import { uploadToCloudinary } from './lib/cloudinary';
 
 function GlobalStyle() {
   return (
@@ -82,30 +59,6 @@ function GlobalStyle() {
     `}</style>
   );
 }
-
-const useUIStore = create((set) => ({
-  dark: typeof window !== 'undefined' && localStorage.getItem('smm-theme') === 'dark',
-  toggleDark: () => set((s) => {
-    const next = !s.dark;
-    localStorage.setItem('smm-theme', next ? 'dark' : 'light');
-    return { dark: next };
-  }),
-  paletteOpen: false,
-  setPaletteOpen: (v) => set({ paletteOpen: v }),
-}));
-
-let toastId = 0;
-const useToastStore = create((set) => ({
-  toasts: [],
-  push: (message, type = 'info') => set((s) => {
-    const id = ++toastId;
-    setTimeout(() => {
-      set((s2) => ({ toasts: s2.toasts.filter((t) => t.id !== id) }));
-    }, 4200);
-    return { toasts: [...s.toasts, { id, message, type }] };
-  }),
-  dismiss: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
-}));
 
 const toastIcons = {
   success: CheckCircleIcon,
@@ -379,6 +332,24 @@ function PrivateRoute({ children }) {
   return user ? children : <Navigate to="/login" replace />;
 }
 
+// Réservé aux rôles cliniques (Docteur Principal, Docteur Délégué, Pharmacien) :
+// dashboard, patients, assistant IA, statistiques.
+function ClinicalRoute({ children }) {
+  const { role, loading: empLoading } = useEmployee();
+  const dark = useUIStore((s) => s.dark);
+  if (empLoading) {
+    return (
+      <div className={`min-h-screen flex items-center justify-center ${dark ? 'bg-[#0A1F1C] text-white' : 'bg-[#F6F3EC]'}`}>
+        <div className="h-8 w-8 border-2 border-current border-t-transparent rounded-full animate-spin opacity-60" />
+      </div>
+    );
+  }
+  if (!isClinicalRole(role)) {
+    return <Navigate to={defaultRouteForRole(role)} replace />;
+  }
+  return children;
+}
+
 function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -403,11 +374,13 @@ function LoginPage() {
         const user = userCredential.user;
         const displayName = `Dr. ${prenom} ${nom}`;
         await updateProfile(user, { displayName });
-        await setDoc(doc(db, 'pharmaciens', user.uid), {
+        const role = determineDefaultRole(email);
+        await setDoc(doc(db, 'employes', user.uid), {
           nom,
           prenom,
           email,
           displayName,
+          role,
           createdAt: serverTimestamp()
         });
         await sendEmailVerification(user);
@@ -442,14 +415,17 @@ function LoginPage() {
     const nameParts = fullName.split(' ');
     const prenom = nameParts[0] || '';
     const nom = nameParts.slice(1).join(' ') || '';
-    await setDoc(doc(db, 'pharmaciens', user.uid), {
+    const existing = await getDoc(doc(db, 'employes', user.uid));
+    const role = existing.exists() ? (existing.data().role || ROLES.PHARMACIEN) : determineDefaultRole(user.email);
+    await setDoc(doc(db, 'employes', user.uid), {
       nom,
       prenom,
       email: user.email,
       displayName: fullName,
+      role,
       createdAt: serverTimestamp()
     }, { merge: true }); 
-    navigate('/dashboard');
+    navigate(defaultRouteForRole(role));
   } catch (err) {
     setError(err.message);
   }
@@ -637,16 +613,26 @@ function CommandPalette() {
   const { logout } = useAuth();
   const inputRef = useRef(null);
 
+  const { role, isDrPrincipal } = useEmployee();
+
   const actions = useMemo(() => ([
-    { label: 'Tableau de bord', icon: HomeIcon, run: () => navigate('/dashboard') },
-    { label: 'Patients', icon: UsersIcon, run: () => navigate('/patients') },
-    { label: 'Ajouter un patient', icon: UserPlusIcon, run: () => navigate('/patients?action=add') },
-    { label: 'Rechercher un patient', icon: MagnifyingGlassIcon, run: () => navigate('/patients?focus=search') },
-    { label: 'Vignon IA', icon: ChatBubbleLeftRightIcon, run: () => navigate('/assistant') },
-    { label: 'Statistiques', icon: ChartBarIcon, run: () => navigate('/stats') },
+    ...(isClinicalRole(role) ? [
+      { label: 'Tableau de bord', icon: HomeIcon, run: () => navigate('/dashboard') },
+      { label: 'Patients', icon: UsersIcon, run: () => navigate('/patients') },
+      { label: 'Ajouter un patient', icon: UserPlusIcon, run: () => navigate('/patients?action=add') },
+      { label: 'Rechercher un patient', icon: MagnifyingGlassIcon, run: () => navigate('/patients?focus=search') },
+      { label: 'Vignon IA', icon: ChatBubbleLeftRightIcon, run: () => navigate('/assistant') },
+      { label: 'Statistiques', icon: ChartBarIcon, run: () => navigate('/stats') },
+    ] : []),
+    { label: 'Réclamations', icon: MegaphoneIcon, run: () => navigate('/reclamations') },
+    { label: 'Permissions', icon: ClipboardDocumentCheckIcon, run: () => navigate('/permissions') },
+    { label: 'Remarques', icon: ChatBubbleLeftEllipsisIcon, run: () => navigate('/remarques') },
+    ...(isDrPrincipal ? [
+      { label: 'Administration', icon: Cog6ToothIcon, run: () => navigate('/admin') },
+    ] : []),
     { label: 'Basculer le mode sombre', icon: MoonIcon, run: () => toggleDark() },
     { label: 'Déconnexion', icon: ArrowLeftOnRectangleIcon, run: () => logout() },
-  ]), [navigate, toggleDark, logout]);
+  ]), [navigate, toggleDark, logout, role, isDrPrincipal]);
 
   const filtered = actions.filter((a) => a.label.toLowerCase().includes(q.toLowerCase()));
 
@@ -717,12 +703,24 @@ function Sidebar() {
   const location = useLocation();
   const { logout, user } = useAuth();
   const { dark, toggleDark, setPaletteOpen } = useUIStore();
+  const { role, isDrPrincipal, isDrDelegue, isComptable } = useEmployee();
 
   const navItems = [
-    { path: '/dashboard', label: 'Tableau de bord', icon: HomeIcon },
-    { path: '/patients', label: 'Patients', icon: UsersIcon },
-    { path: '/assistant', label: 'Vignon IA', icon: ChatBubbleLeftRightIcon },
-    { path: '/stats', label: 'Statistiques', icon: ChartBarIcon },
+    ...(isClinicalRole(role) ? [
+      { path: '/dashboard', label: 'Tableau de bord', icon: HomeIcon },
+      { path: '/patients', label: 'Patients', icon: UsersIcon },
+      { path: '/assistant', label: 'Vignon IA', icon: ChatBubbleLeftRightIcon },
+      { path: '/stats', label: 'Statistiques', icon: ChartBarIcon },
+    ] : []),
+    { path: '/reclamations', label: 'Réclamations', icon: MegaphoneIcon },
+    { path: '/permissions', label: 'Permissions', icon: ClipboardDocumentCheckIcon },
+    { path: '/remarques', label: 'Remarques', icon: ChatBubbleLeftEllipsisIcon },
+    ...(isComptable || isDrPrincipal || isDrDelegue ? [
+      { path: '/rapports', label: 'Rapports', icon: DocumentArrowUpIcon },
+    ] : []),
+    ...(isDrPrincipal ? [
+      { path: '/admin', label: 'Administration', icon: Cog6ToothIcon },
+    ] : []),
   ];
 
   return (
@@ -767,7 +765,10 @@ function Sidebar() {
           Déconnexion
         </button>
         {user?.displayName && (
-          <p className="text-xs text-white/40 text-center mt-2">{user.displayName}</p>
+          <div className="text-center mt-2">
+            <p className="text-xs text-white/40">{user.displayName}</p>
+            {role && <p className="text-[10px] uppercase tracking-wide text-white/30 font-mono mt-0.5">{roleLabel(role)}</p>}
+          </div>
         )}
       </div>
     </div>
@@ -1193,7 +1194,8 @@ function VisitModal({ patient, onClose, onSave }) {
     try {
       let ordonnanceUrl = '';
       if (ordonnanceFile) {
-        ordonnanceUrl = await uploadToCloudinary(ordonnanceFile);
+        const uploaded = await uploadToCloudinary(ordonnanceFile);
+        ordonnanceUrl = uploaded.url;
       }
       await onSave({ date: new Date().toISOString(), objet, notes, ordonnanceUrl: ordonnanceUrl || '' });
     } catch (err) {
@@ -2837,6 +2839,7 @@ function LayoutWithSidebar({ children }) {
     <div className={`min-h-screen flex ${dark ? 'bg-[#0A1F1C]' : 'bg-[#F6F3EC]'}`}>
       <GlobalStyle />
       <CommandPalette />
+      <ReclamationNotifier />
       <div className="hidden md:block"><Sidebar /></div>
       <AnimatePresence>
         {mobileOpen && (
@@ -2858,15 +2861,26 @@ function LayoutWithSidebar({ children }) {
   );
 }
 
+function HomeRedirect() {
+  const { role, loading } = useEmployee();
+  if (loading) return null;
+  return <Navigate to={defaultRouteForRole(role)} replace />;
+}
+
 function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/dashboard" element={<PrivateRoute><LayoutWithSidebar><DashboardPage /></LayoutWithSidebar></PrivateRoute>} />
-      <Route path="/patients" element={<PrivateRoute><LayoutWithSidebar><PatientsPage /></LayoutWithSidebar></PrivateRoute>} />
-      <Route path="/assistant" element={<PrivateRoute><LayoutWithSidebar><AssistantPage /></LayoutWithSidebar></PrivateRoute>} />
-      <Route path="/stats" element={<PrivateRoute><LayoutWithSidebar><StatsPage /></LayoutWithSidebar></PrivateRoute>} />
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      <Route path="/dashboard" element={<PrivateRoute><ClinicalRoute><LayoutWithSidebar><DashboardPage /></LayoutWithSidebar></ClinicalRoute></PrivateRoute>} />
+      <Route path="/patients" element={<PrivateRoute><ClinicalRoute><LayoutWithSidebar><PatientsPage /></LayoutWithSidebar></ClinicalRoute></PrivateRoute>} />
+      <Route path="/assistant" element={<PrivateRoute><ClinicalRoute><LayoutWithSidebar><AssistantPage /></LayoutWithSidebar></ClinicalRoute></PrivateRoute>} />
+      <Route path="/stats" element={<PrivateRoute><ClinicalRoute><LayoutWithSidebar><StatsPage /></LayoutWithSidebar></ClinicalRoute></PrivateRoute>} />
+      <Route path="/reclamations" element={<PrivateRoute><LayoutWithSidebar><ReclamationsPage /></LayoutWithSidebar></PrivateRoute>} />
+      <Route path="/permissions" element={<PrivateRoute><LayoutWithSidebar><PermissionsPage /></LayoutWithSidebar></PrivateRoute>} />
+      <Route path="/remarques" element={<PrivateRoute><LayoutWithSidebar><RemarquesPage /></LayoutWithSidebar></PrivateRoute>} />
+      <Route path="/rapports" element={<PrivateRoute><LayoutWithSidebar><RapportsComptablePage /></LayoutWithSidebar></PrivateRoute>} />
+      <Route path="/admin" element={<PrivateRoute><LayoutWithSidebar><AdminPage /></LayoutWithSidebar></PrivateRoute>} />
+      <Route path="*" element={<PrivateRoute><HomeRedirect /></PrivateRoute>} />
     </Routes>
   );
 }
@@ -2875,13 +2889,15 @@ function App() {
   const { dark } = useUIStore();
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <AppRoutes />
-      </BrowserRouter>
-      {/* Montés au niveau racine : visibles sur /login aussi, et on ne rate jamais
-          l'évènement beforeinstallprompt même s'il arrive avant connexion. */}
-      <ToastStack />
-      <FloatingInstallBadge dark={dark} />
+      <EmployeeProvider>
+        <BrowserRouter>
+          <AppRoutes />
+        </BrowserRouter>
+        {/* Montés au niveau racine : visibles sur /login aussi, et on ne rate jamais
+            l'évènement beforeinstallprompt même s'il arrive avant connexion. */}
+        <ToastStack />
+        <FloatingInstallBadge dark={dark} />
+      </EmployeeProvider>
     </AuthProvider>
   );
 }

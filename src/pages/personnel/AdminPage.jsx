@@ -110,7 +110,7 @@ export default function AdminPage() {
 
                 {isProtected ? (
                   <span className={`text-xs font-mono flex-shrink-0 ${dark ? 'text-white/30' : 'text-gray-400'}`}>
-                    Compte protégé
+                    Développeur
                   </span>
                 ) : (
                   <div className="flex items-center gap-2 flex-shrink-0">

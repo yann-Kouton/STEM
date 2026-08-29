@@ -1,0 +1,157 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- Identité protégée (super admin) ----------
+    // Doit rester EXACTEMENT synchronisé avec SUPER_ADMIN_EMAILS dans
+    // src/config.local.js. Ce compte ne peut jamais être modifié/désactivé
+    // par personne d'autre que lui-même (voir isProtectedTarget()).
+    function superAdminEmails() {
+      return ['esmelyann@gmail.com'];
+    }
+
+    function isSuperAdminIdentity() {
+      return isSignedIn() && request.auth.token.email != null &&
+        request.auth.token.email.lower() in superAdminEmails();
+    }
+
+    // ---------- Helpers ----------
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function employeExists() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/employes/$(request.auth.uid));
+    }
+
+    function myData() {
+      return get(/databases/$(database)/documents/employes/$(request.auth.uid)).data;
+    }
+
+    function myRole() {
+      return myData().role;
+    }
+
+    // Un compte désactivé (disabled: true) perd tous ses droits, même s'il
+    // garde un rôle enregistré.
+    function isActive() {
+      return employeExists() && myData().disabled != true;
+    }
+
+    function isSuperAdmin() {
+      return isActive() && myRole() == 'super_admin';
+    }
+
+    function isDrPrincipal() {
+      return isActive() && myRole() == 'dr_principal';
+    }
+
+    function isAdmin() {
+      // Peut gérer les rôles / désactiver des comptes
+      return isDrPrincipal() || isSuperAdmin();
+    }
+
+    function isReviewer() {
+      // Docteur Principal + Docteur Délégué (REVIEWER_ROLES côté client)
+      return isActive() && myRole() in ['dr_principal', 'dr_delegue'];
+    }
+
+    function isClinical() {
+      // CLINICAL_ROLES côté client : accès dashboard / patients
+      return isActive() && myRole() in ['dr_principal', 'dr_delegue', 'pharmacien'];
+    }
+
+    function isComptable() {
+      return isActive() && myRole() == 'comptable';
+    }
+
+    function isEmploye() {
+      // N'importe quel membre du personnel actif
+      return isActive();
+    }
+
+    // Le document employes CIBLE (resource) appartient-il au compte protégé ?
+    function isProtectedTarget() {
+      return resource.data.email != null && resource.data.email.lower() in superAdminEmails();
+    }
+
+    // ---------- employes ----------
+    match /employes/{uid} {
+      // Chacun peut lire son propre document (nécessaire dès le premier login,
+      // avant même que le doc existe côté migration). L'administration
+      // (Dr Principal / Super Admin) peut lire tout le monde (AdminPage).
+      allow read: if isSignedIn() && (request.auth.uid == uid || isDrPrincipal() || isSuperAdmin());
+      allow create: if isSignedIn() && request.auth.uid == uid;
+
+      // Mise à jour :
+      // - soi-même : jamais le champ "role" (sauf le vrai super admin qui se
+      //   force lui-même en 'super_admin' via le garde-fou du code) ni "disabled".
+      // - Dr Principal / Super Admin : peuvent changer role/disabled de
+      //   n'importe qui SAUF le compte protégé (super admin).
+      allow update: if isSignedIn() && (
+        (
+          request.auth.uid == uid &&
+          request.resource.data.disabled == resource.data.disabled &&
+          (request.resource.data.role == resource.data.role || isSuperAdminIdentity())
+        )
+        ||
+        (isAdmin() && !isProtectedTarget())
+      );
+
+      // On ne supprime jamais un profil : on le désactive (disabled: true).
+      allow delete: if false;
+    }
+
+    // ---------- pharmaciens (collection legacy, migration uniquement) ----------
+    match /pharmaciens/{uid} {
+      allow read: if isSignedIn() && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // ---------- patients (dossiers cliniques) ----------
+    match /patients/{patientId} {
+      allow create: if isClinical() &&
+        request.resource.data.pharmacienId == request.auth.uid;
+      allow read, update, delete: if isClinical() &&
+        resource.data.pharmacienId == request.auth.uid;
+    }
+
+    // ---------- reclamations (visibles par tous les employés actifs) ----------
+    match /reclamations/{id} {
+      allow read: if isEmploye();
+      allow create: if isEmploye() &&
+        request.resource.data.auteurId == request.auth.uid;
+      allow update: if isReviewer();
+      allow delete: if false;
+    }
+
+    // ---------- demandes_permission ----------
+    match /demandes_permission/{id} {
+      allow create: if isEmploye() &&
+        request.resource.data.employeId == request.auth.uid;
+      allow read: if isEmploye() &&
+        (resource.data.employeId == request.auth.uid || isDrPrincipal() || isSuperAdmin());
+      allow update: if isDrPrincipal() || isSuperAdmin();
+      allow delete: if false;
+    }
+
+    // ---------- remarques_anonymes ----------
+    match /remarques_anonymes/{id} {
+      allow create: if isEmploye();
+      allow read: if isReviewer();
+      allow update, delete: if false;
+    }
+
+    // ---------- rapports_comptables ----------
+    match /rapports_comptables/{id} {
+      allow create: if isComptable() &&
+        request.resource.data.auteurId == request.auth.uid;
+      allow read: if isReviewer() ||
+        (isComptable() && resource.data.auteurId == request.auth.uid);
+      allow update, delete: if false;
+    }
+
+    // Tout le reste : refusé par défaut (comportement implicite de Firestore).
+  }
+}

@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { doc, getDoc, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { useAuth } from './AuthContext';
+import { useToastStore } from '../lib/theme';
 import {
   ROLES, CLINICAL_ROLES, REVIEWER_ROLES, determineDefaultRole, isSuperAdminEmail,
 } from '../lib/personnel';
@@ -9,7 +10,8 @@ import {
 const EmployeeContext = createContext(null);
 
 export function EmployeeProvider({ children }) {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
+  const push = useToastStore((s) => s.push);
   const [employee, setEmployee] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -41,10 +43,10 @@ export function EmployeeProvider({ children }) {
               createdAt: serverTimestamp(),
             }, { merge: true });
           }
-        } else if (isSuperAdminEmail(user.email) && employeSnap.data().role !== ROLES.DR_PRINCIPAL) {
-          // Garde-fou : l'email whitelisté redevient toujours Docteur Principal,
+        } else if (isSuperAdminEmail(user.email) && employeSnap.data().role !== ROLES.SUPER_ADMIN) {
+          // Garde-fou : l'email whitelisté redevient toujours Super Admin,
           // même s'il a été modifié par erreur depuis le panneau d'administration.
-          await updateDoc(employeRef, { role: ROLES.DR_PRINCIPAL });
+          await updateDoc(employeRef, { role: ROLES.SUPER_ADMIN });
         }
       } catch (err) {
         console.error('Migration employé impossible :', err);
@@ -54,6 +56,13 @@ export function EmployeeProvider({ children }) {
     const unsub = onSnapshot(doc(db, 'employes', user.uid), (snap) => {
       if (snap.exists()) {
         const data = snap.data();
+        if (data.disabled) {
+          setEmployee(null);
+          setLoading(false);
+          push('Votre accès a été désactivé par l\'administrateur.', 'error');
+          logout();
+          return;
+        }
         setEmployee({ id: snap.id, ...data, role: data.role || ROLES.PHARMACIEN });
       } else {
         setEmployee(null);
@@ -70,6 +79,7 @@ export function EmployeeProvider({ children }) {
     employee,
     role,
     loading,
+    isSuperAdmin: role === ROLES.SUPER_ADMIN,
     isDrPrincipal: role === ROLES.DR_PRINCIPAL,
     isDrDelegue: role === ROLES.DR_DELEGUE,
     isPharmacien: role === ROLES.PHARMACIEN,

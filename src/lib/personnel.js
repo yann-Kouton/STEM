@@ -2,6 +2,7 @@
 import { SUPER_ADMIN_EMAILS as CONFIG_ADMIN_EMAILS } from '../config.local';
 
 export const ROLES = {
+  SUPER_ADMIN: 'super_admin',
   DR_PRINCIPAL: 'dr_principal',
   DR_DELEGUE: 'dr_delegue',
   PHARMACIEN: 'pharmacien',
@@ -10,6 +11,7 @@ export const ROLES = {
 };
 
 export const ROLE_LABELS = {
+  [ROLES.SUPER_ADMIN]: 'Super Admin',
   [ROLES.DR_PRINCIPAL]: 'Docteur Principal',
   [ROLES.DR_DELEGUE]: 'Docteur Délégué',
   [ROLES.PHARMACIEN]: 'Pharmacien',
@@ -40,7 +42,7 @@ export function isReviewerRole(role) {
 }
 
 export function isSuperAdmin(role) {
-  return role === ROLES.DR_PRINCIPAL;
+  return role === ROLES.SUPER_ADMIN;
 }
 
 export function roleLabel(role) {
@@ -49,6 +51,7 @@ export function roleLabel(role) {
 
 // Route d'atterrissage par défaut selon le rôle après connexion
 export function defaultRouteForRole(role) {
+  if (role === ROLES.SUPER_ADMIN) return '/admin';
   if (isClinicalRole(role)) return '/dashboard';
   if (role === ROLES.COMPTABLE) return '/rapports';
   return '/reclamations';
@@ -68,7 +71,7 @@ export function isSuperAdminEmail(email) {
 }
 
 export function determineDefaultRole(email) {
-  return isSuperAdminEmail(email) ? ROLES.DR_PRINCIPAL : ROLES.PHARMACIEN;
+  return isSuperAdminEmail(email) ? ROLES.SUPER_ADMIN : ROLES.PHARMACIEN;
 }
 
 // --- Notification sonore (bip généré, sans fichier audio) -------------

@@ -613,7 +613,7 @@ function CommandPalette() {
   const { logout } = useAuth();
   const inputRef = useRef(null);
 
-  const { role, isDrPrincipal } = useEmployee();
+  const { role, isDrPrincipal, isSuperAdmin } = useEmployee();
 
   const actions = useMemo(() => ([
     ...(isClinicalRole(role) ? [
@@ -627,12 +627,12 @@ function CommandPalette() {
     { label: 'Réclamations', icon: MegaphoneIcon, run: () => navigate('/reclamations') },
     { label: 'Permissions', icon: ClipboardDocumentCheckIcon, run: () => navigate('/permissions') },
     { label: 'Remarques', icon: ChatBubbleLeftEllipsisIcon, run: () => navigate('/remarques') },
-    ...(isDrPrincipal ? [
+    ...(isDrPrincipal || isSuperAdmin ? [
       { label: 'Administration', icon: Cog6ToothIcon, run: () => navigate('/admin') },
     ] : []),
     { label: 'Basculer le mode sombre', icon: MoonIcon, run: () => toggleDark() },
     { label: 'Déconnexion', icon: ArrowLeftOnRectangleIcon, run: () => logout() },
-  ]), [navigate, toggleDark, logout, role, isDrPrincipal]);
+  ]), [navigate, toggleDark, logout, role, isDrPrincipal, isSuperAdmin]);
 
   const filtered = actions.filter((a) => a.label.toLowerCase().includes(q.toLowerCase()));
 
@@ -703,7 +703,7 @@ function Sidebar() {
   const location = useLocation();
   const { logout, user } = useAuth();
   const { dark, toggleDark, setPaletteOpen } = useUIStore();
-  const { role, isDrPrincipal, isDrDelegue, isComptable } = useEmployee();
+  const { role, isDrPrincipal, isDrDelegue, isComptable, isSuperAdmin } = useEmployee();
 
   const navItems = [
     ...(isClinicalRole(role) ? [
@@ -718,7 +718,7 @@ function Sidebar() {
     ...(isComptable || isDrPrincipal || isDrDelegue ? [
       { path: '/rapports', label: 'Rapports', icon: DocumentArrowUpIcon },
     ] : []),
-    ...(isDrPrincipal ? [
+    ...(isDrPrincipal || isSuperAdmin ? [
       { path: '/admin', label: 'Administration', icon: Cog6ToothIcon },
     ] : []),
   ];

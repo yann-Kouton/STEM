@@ -34,12 +34,13 @@ export function EmployeeProvider({ children }) {
           const legacySnap = await getDoc(legacyRef);
           const role = determineDefaultRole(user.email);
           if (legacySnap.exists()) {
-            await setDoc(employeRef, { ...legacySnap.data(), role }, { merge: true });
+            await setDoc(employeRef, { ...legacySnap.data(), role, disabled: false }, { merge: true });
           } else {
             await setDoc(employeRef, {
               email: user.email,
               displayName: user.displayName || '',
               role,
+              disabled: false,
               createdAt: serverTimestamp(),
             }, { merge: true });
           }

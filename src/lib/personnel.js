@@ -109,10 +109,3 @@ export const STATUT_LABELS = {
   ouverte: 'Ouverte',
   traitee: 'Traitée',
 };
-
-export const TYPES_PERMISSION = [
-  'Congé',
-  'Absence exceptionnelle',
-  "Accès / matériel",
-  'Autre',
-];

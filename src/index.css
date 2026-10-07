@@ -6,3 +6,18 @@ body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   background: #f0f4ff;
 }
+
+/* ---------- Impression de la fiche « Demande de permission » ---------- */
+@media print {
+  @page { size: A4; margin: 10mm; }
+  body.has-print-portal #root { display: none !important; }
+  body.has-print-portal { background: #fff !important; }
+  .print-portal {
+    position: static !important;
+    inset: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+  .no-print { display: none !important; }
+  .permission-sheet { box-shadow: none !important; max-width: none !important; }
+}

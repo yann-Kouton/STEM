@@ -71,6 +71,18 @@ service cloud.firestore {
       return isActive();
     }
 
+    // Conversations privées : l'id est « dm_<uidA>_<uidB> » (UID triés). Les UID
+    // Firebase ne contiennent jamais de « _ », donc le split est fiable.
+    function isDmMember(convId) {
+      let p = convId.split('_');
+      return p.size() == 3 && p[0] == 'dm' &&
+        (p[1] == request.auth.uid || p[2] == request.auth.uid);
+    }
+
+    function canAccessConv(convId) {
+      return convId == 'general' || isDmMember(convId);
+    }
+
     // Le document employes CIBLE (resource) appartient-il au compte protégé ?
     function isProtectedTarget() {
       return resource.data.email != null && resource.data.email.lower() in superAdminEmails();
@@ -79,9 +91,10 @@ service cloud.firestore {
     // ---------- employes ----------
     match /employes/{uid} {
       // Chacun peut lire son propre document (nécessaire dès le premier login,
-      // avant même que le doc existe côté migration). L'administration
-      // (Dr Principal / Super Admin) peut lire tout le monde (AdminPage).
-      allow read: if isSignedIn() && (request.auth.uid == uid || isDrPrincipal() || isSuperAdmin());
+      // avant même que le doc existe côté migration). Tout employé actif peut
+      // aussi lire l'annuaire (nom, rôle, email) : indispensable à la messagerie
+      // interne et à l'administration (AdminPage).
+      allow read: if isSignedIn() && (request.auth.uid == uid || isEmploye());
       allow create: if isSignedIn() && request.auth.uid == uid;
 
       // Mise à jour :
@@ -126,13 +139,20 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // ---------- demandes_permission ----------
+    // ---------- demandes_permission (formulaire « Demande de permission ») ----------
+    // Le demandeur crée la demande (avec sa signature) ; le Docteur Principal /
+    // Super Admin ne peut ensuite que renseigner la décision, une seule fois.
     match /demandes_permission/{id} {
       allow create: if isEmploye() &&
-        request.resource.data.employeId == request.auth.uid;
+        request.resource.data.employeId == request.auth.uid &&
+        request.resource.data.statut == 'en_attente';
       allow read: if isEmploye() &&
         (resource.data.employeId == request.auth.uid || isDrPrincipal() || isSuperAdmin());
-      allow update: if isDrPrincipal() || isSuperAdmin();
+      allow update: if (isDrPrincipal() || isSuperAdmin()) &&
+        resource.data.statut == 'en_attente' &&
+        request.resource.data.statut in ['approuvee', 'refusee'] &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['statut', 'decision', 'traiteAt', 'traiteParId']);
       allow delete: if false;
     }
 
@@ -150,6 +170,52 @@ service cloud.firestore {
       allow read: if isReviewer() ||
         (isComptable() && resource.data.auteurId == request.auth.uid);
       allow update, delete: if false;
+    }
+
+    // ---------- Messagerie interne ----------
+    // conversations/general            : discussion générale (tous les employés actifs)
+    // conversations/dm_<uidA>_<uidB>   : conversation privée entre deux employés
+    match /conversations/{convId} {
+      // Les requêtes de liste passent par « participants array-contains uid ».
+      allow read: if isEmploye() &&
+        (convId == 'general' ||
+          (resource != null && request.auth.uid in resource.data.participants));
+
+      allow create: if isEmploye() && (
+        (convId == 'general' && request.resource.data.type == 'general') ||
+        (isDmMember(convId) &&
+          request.resource.data.type == 'direct' &&
+          request.resource.data.participants.size() == 2 &&
+          request.resource.data.participants.hasAll(convId.split('_')[1:3]))
+      );
+
+      // Le document résumé (dernier message) est mis à jour à chaque envoi.
+      allow update: if isEmploye() && (
+        (convId == 'general' &&
+          request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['lastMessage', 'updatedAt'])) ||
+        (isDmMember(convId) &&
+          request.resource.data.participants == resource.data.participants)
+      );
+      allow delete: if false;
+
+      match /messages/{msgId} {
+        allow read: if isEmploye() && canAccessConv(convId);
+        allow create: if isEmploye() && canAccessConv(convId) &&
+          request.resource.data.keys().hasOnly(['senderId', 'senderName', 'senderRole', 'text', 'createdAt']) &&
+          request.resource.data.senderId == request.auth.uid &&
+          request.resource.data.text is string &&
+          request.resource.data.text.size() > 0 &&
+          request.resource.data.text.size() <= 2000 &&
+          request.resource.data.createdAt == request.time;
+        // Messages non modifiables et non supprimables.
+        allow update, delete: if false;
+      }
+    }
+
+    // Date de dernière lecture de chaque conversation, propre à chaque employé.
+    match /chat_reads/{uid} {
+      allow read, write: if isEmploye() && request.auth.uid == uid;
     }
 
     // Tout le reste : refusé par défaut (comportement implicite de Firestore).

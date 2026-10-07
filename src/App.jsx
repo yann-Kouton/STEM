@@ -10,12 +10,15 @@ import {
 } from 'recharts';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { EmployeeProvider, useEmployee } from './context/EmployeeContext';
+import { ChatProvider, useChat } from './context/ChatContext';
 import { C, useUIStore, useToastStore } from './lib/theme';
 import { ROLES, roleLabel, defaultRouteForRole, determineDefaultRole, isClinicalRole } from './lib/personnel';
 import ReclamationNotifier from './components/personnel/ReclamationNotifier';
+import PermissionNotifier from './components/personnel/PermissionNotifier';
 import AdminPage from './pages/personnel/AdminPage';
 import ReclamationsPage from './pages/personnel/ReclamationsPage';
 import PermissionsPage from './pages/personnel/PermissionsPage';
+import MessagesPage from './pages/chat/MessagesPage';
 import RemarquesPage from './pages/personnel/RemarquesPage';
 import RapportsComptablePage from './pages/personnel/RapportsComptablePage';
 import {
@@ -30,7 +33,7 @@ import {
   EyeIcon, EyeSlashIcon,
   ArrowDownTrayIcon, SignalSlashIcon,
   MegaphoneIcon, ClipboardDocumentCheckIcon, ChatBubbleLeftEllipsisIcon,
-  Cog6ToothIcon, DocumentArrowUpIcon
+  Cog6ToothIcon, DocumentArrowUpIcon, ChatBubbleOvalLeftEllipsisIcon
 } from '@heroicons/react/24/outline';
 import { sendPasswordResetEmail, sendEmailVerification, updateProfile } from 'firebase/auth';
 import { auth, db } from './firebase/config';
@@ -624,6 +627,7 @@ function CommandPalette() {
       { label: 'Vignon IA', icon: ChatBubbleLeftRightIcon, run: () => navigate('/assistant') },
       { label: 'Statistiques', icon: ChartBarIcon, run: () => navigate('/stats') },
     ] : []),
+    { label: 'Messages', icon: ChatBubbleOvalLeftEllipsisIcon, run: () => navigate('/messages') },
     { label: 'Réclamations', icon: MegaphoneIcon, run: () => navigate('/reclamations') },
     { label: 'Permissions', icon: ClipboardDocumentCheckIcon, run: () => navigate('/permissions') },
     { label: 'Remarques', icon: ChatBubbleLeftEllipsisIcon, run: () => navigate('/remarques') },
@@ -704,6 +708,7 @@ function Sidebar() {
   const { logout, user } = useAuth();
   const { dark, toggleDark, setPaletteOpen } = useUIStore();
   const { role, isDrPrincipal, isDrDelegue, isComptable, isSuperAdmin } = useEmployee();
+  const { unreadCount } = useChat();
 
   const navItems = [
     ...(isClinicalRole(role) ? [
@@ -712,6 +717,7 @@ function Sidebar() {
       { path: '/assistant', label: 'Vignon IA', icon: ChatBubbleLeftRightIcon },
       { path: '/stats', label: 'Statistiques', icon: ChartBarIcon },
     ] : []),
+    { path: '/messages', label: 'Messages', icon: ChatBubbleOvalLeftEllipsisIcon, badge: unreadCount },
     { path: '/reclamations', label: 'Réclamations', icon: MegaphoneIcon },
     { path: '/permissions', label: 'Permissions', icon: ClipboardDocumentCheckIcon },
     { path: '/remarques', label: 'Remarques', icon: ChatBubbleLeftEllipsisIcon },
@@ -743,6 +749,11 @@ function Sidebar() {
             >
               <item.icon className="mr-3 h-5 w-5" />
               {item.label}
+              {item.badge > 0 && (
+                <span className="ml-auto min-w-[20px] rounded-full bg-red-500 px-1.5 py-0.5 text-center text-[11px] font-semibold leading-none text-white">
+                  {item.badge}
+                </span>
+              )}
             </Link>
           );
         })}
@@ -2835,6 +2846,7 @@ function StatsPage() {
 function LayoutWithSidebar({ children }) {
   const { dark, paletteOpen, setPaletteOpen } = useUIStore();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { unreadCount } = useChat();
   return (
     <div className={`min-h-screen flex ${dark ? 'bg-[#0A1F1C]' : 'bg-[#F6F3EC]'}`}>
       <GlobalStyle />
@@ -2851,7 +2863,10 @@ function LayoutWithSidebar({ children }) {
       </AnimatePresence>
       <div className="flex-1 overflow-auto">
         <div className="md:hidden flex items-center justify-between px-4 h-14 border-b" style={{ borderColor: dark ? '#ffffff14' : '#00000010' }}>
-          <button onClick={() => setMobileOpen(true)} className={dark ? 'text-white' : 'text-gray-700'}><Bars3Icon className="h-6 w-6" /></button>
+          <button onClick={() => setMobileOpen(true)} className={`relative ${dark ? 'text-white' : 'text-gray-700'}`} aria-label="Menu">
+            <Bars3Icon className="h-6 w-6" />
+            {unreadCount > 0 && <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-red-500" />}
+          </button>
           <span className={`font-display text-sm ${dark ? 'text-white' : 'text-gray-800'}`}>Sainte Marie Majeure</span>
           <button onClick={() => setPaletteOpen(true)} className={dark ? 'text-white/60' : 'text-gray-400'}><CommandLineIcon className="h-5 w-5" /></button>
         </div>
@@ -2875,6 +2890,7 @@ function AppRoutes() {
       <Route path="/patients" element={<PrivateRoute><ClinicalRoute><LayoutWithSidebar><PatientsPage /></LayoutWithSidebar></ClinicalRoute></PrivateRoute>} />
       <Route path="/assistant" element={<PrivateRoute><ClinicalRoute><LayoutWithSidebar><AssistantPage /></LayoutWithSidebar></ClinicalRoute></PrivateRoute>} />
       <Route path="/stats" element={<PrivateRoute><ClinicalRoute><LayoutWithSidebar><StatsPage /></LayoutWithSidebar></ClinicalRoute></PrivateRoute>} />
+      <Route path="/messages" element={<PrivateRoute><LayoutWithSidebar><MessagesPage /></LayoutWithSidebar></PrivateRoute>} />
       <Route path="/reclamations" element={<PrivateRoute><LayoutWithSidebar><ReclamationsPage /></LayoutWithSidebar></PrivateRoute>} />
       <Route path="/permissions" element={<PrivateRoute><LayoutWithSidebar><PermissionsPage /></LayoutWithSidebar></PrivateRoute>} />
       <Route path="/remarques" element={<PrivateRoute><LayoutWithSidebar><RemarquesPage /></LayoutWithSidebar></PrivateRoute>} />
@@ -2890,13 +2906,16 @@ function App() {
   return (
     <AuthProvider>
       <EmployeeProvider>
-        <BrowserRouter>
-          <AppRoutes />
-        </BrowserRouter>
-        {/* Montés au niveau racine : visibles sur /login aussi, et on ne rate jamais
-            l'évènement beforeinstallprompt même s'il arrive avant connexion. */}
-        <ToastStack />
-        <FloatingInstallBadge dark={dark} />
+        <ChatProvider>
+          <BrowserRouter>
+            <AppRoutes />
+          </BrowserRouter>
+          {/* Montés au niveau racine : visibles sur /login aussi, et on ne rate jamais
+              l'évènement beforeinstallprompt même s'il arrive avant connexion. */}
+          <PermissionNotifier />
+          <ToastStack />
+          <FloatingInstallBadge dark={dark} />
+        </ChatProvider>
       </EmployeeProvider>
     </AuthProvider>
   );
